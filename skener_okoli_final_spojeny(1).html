@@ -1,0 +1,313 @@
+
+<!DOCTYPE html>
+<html lang="cs">
+<head>
+  <meta charset="UTF-8">
+  <title>Skener okolí</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <style>
+    body { margin: 0; font-family: sans-serif; }
+    #map {
+      width: 100vw; height: 90vh; background: #eef; position: relative;
+      border: 2px dashed #333; box-sizing: border-box;
+    }
+    .poi {
+      position: absolute;
+      transform: translate(-50%, -50%);
+      cursor: pointer;
+      background: #fff;
+      padding: 2px 5px;
+      border-radius: 4px;
+      font-size: 12px;
+      white-space: nowrap;
+      box-shadow: 0 0 3px rgba(0,0,0,0.3);
+      //background-image: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><polygon points="50,10 60,40 50,30 40,40" fill="blue"/></svg>');
+      background-repeat: no-repeat;
+      transition: transform 0.3s ease;
+    }
+    
+    
+    .poi::before {
+      content: '';
+      display: inline-block;
+      width: 8px;
+      height: 8px;
+      background-color: black;
+      border-radius: 50%; /* udělá z čtverce kruh */
+      margin-right: 5px;
+      background-repeat: no-repeat;
+      //background-image: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><polygon points="50,10 60,40 50,30 40,40" fill="blue"/></svg>');
+    }
+
+    .arrow {
+      display: block;
+      width: 30px;
+      height: 30px;
+      background-image: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><polygon points="50,10 60,40 50,30 40,40" fill="red"/></svg>');
+      background-size: none;
+      background-repeat: no-repeat;
+      transition: transform 0.3s ease;
+    }
+
+    
+    #controls {
+      position: absolute; top: 10px; left: 10px; background: white; padding: 10px;
+      border-radius: 8px; box-shadow: 0 0 5px rgba(0,0,0,0.3); z-index: 10;
+    }
+    #log {
+      position: absolute; bottom: 0; left: 0; 
+      width: 100vw;
+      height: 10vh;
+      height: vh;
+      overflow-y: auto; background: rgba(255,255,255,0.9); font-size: 12px;
+      padding: 5px; box-sizing: border-box; z-index: 10;
+    }
+    #centerMarker {
+      position: absolute;
+      left: 50%; top: 50%;
+      font-size: 20px;
+      transform: translate(-50%, -50%);
+      z-index: 5;
+    }
+    #info {
+      position: absolute; top: 10px; right: 10px; background: white; padding: 10px;
+      border-radius: 8px; box-shadow: 0 0 5px rgba(0,0,0,0.3); z-index: 10;
+      font-size: 14px;
+    }
+  </style>
+</head>
+<body>
+  <div id="map">
+    <div id="centerMarker">🏍️</div>
+  </div>
+  <div id="controls">
+    Radius: <input type="range" id="radius" min="1" max="20" value="10"> <span id="radiusVal">10 km</span><br>
+    Interval: <input type="range" id="interval" min="5" max="60" value="5"> <span id="intervalVal">5 s</span>
+  </div>
+  <div id="info">Načítání polohy...</div>
+  <div id="log"></div>
+
+  <script>
+    const map = document.getElementById('map');
+    const radiusInput = document.getElementById('radius');
+    const intervalInput = document.getElementById('interval');
+    const radiusVal = document.getElementById('radiusVal');
+    const intervalVal = document.getElementById('intervalVal');
+    const logDiv = document.getElementById('log');
+    const infoDiv = document.getElementById('info');
+
+    let center = { lat: 50.2333, lon: 14.3833 }; // fallback Kozomín
+    let heading = 0;
+    let interval = 5000;
+    let lastPosition = null;
+    let isLoading = false;
+
+    function log(msg) {
+      console.log(msg);
+      const p = document.createElement('div');
+      p.textContent = msg;
+      logDiv.appendChild(p);
+      logDiv.scrollTop = logDiv.scrollHeight;
+    }
+
+    radiusInput.oninput = () => {
+      radiusVal.textContent = `${radiusInput.value} km`;
+    };
+    intervalInput.oninput = () => {
+      intervalVal.textContent = `${intervalInput.value} s`;
+      interval = intervalInput.value * 1000;
+    };
+
+    function getDistance(lat1, lon1, lat2, lon2) {
+      const R = 6371;
+      const dLat = (lat2 - lat1) * Math.PI / 180;
+      const dLon = (lon2 - lon1) * Math.PI / 180;
+      const a = Math.sin(dLat/2) * Math.sin(dLat/2) +
+                Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+                Math.sin(dLon/2) * Math.sin(dLon/2);
+      const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+      return R * c;
+    }
+
+    function getPOIs(lat, lon, radiusKm) {
+      isLoading = true;
+      log(`Načítám POI pro souřadnice ${lat}, ${lon} v okruhu ${radiusKm} km`);
+      const query = `
+        [out:json][timeout:100];
+        (
+        
+  // kostely s nazvem
+  //nwr["building"="church"](around:${radiusKm * 1000/2},${lat},${lon}) (if:t["name"] != "");  
+ // historicke stavby s wiki 
+  nwr[historic~"^(castle|ruins|chateau|fortress)$"](around:${radiusKm * 1000},${lat},${lon}) (if:t["wikipedia"] != "");
+// prirodni rezervace s wiki 
+//  nwr["leisure"="nature_reserve"](around:${radiusKm * 1000},${lat},${lon})(if:t["wikipedia"] != "");
+// rozhledna
+  nwr["man_made"="tower"]["tower:type"="observation"](around:${radiusKm * 1000},${lat},${lon}) (if:t["name"] != ""); //podminka na nazev kvuli posedum
+// kopec	
+  nwr["natural"="peak"](around:${radiusKm * 1000},${lat},${lon})(if:t["ele"] > 400); 
+//obcerstveni
+//  nwr["amenity"~"cafe|bar|restaurant"](around:${radiusKm * 1000/2},${lat},${lon});
+        );
+        out center;
+      `;
+      fetch("https://overpass-api.de/api/interpreter", {
+        method: "POST",
+        body: query
+      })
+      .then(res => res.json())
+      .then(data => {
+        //console.log(data); 
+       //parseOverpassData(data);
+        map.querySelectorAll('.poi').forEach(el => el.remove());
+        //console.log(data);
+        //console.log('parametr ' + data.elements[0].center.lat); 
+        let maxDistance = 0;
+        const poiList = [];
+        var lonPOI;
+        var latPOI;
+        data.elements.forEach(element => {
+           if (element.lat) {
+            var latPOI = element.lat;
+            var lonPOI = element.lon;
+            //log(`element.lon => ${lonPOI}`);
+            //console.log('lonPOI = '+lonPOI);
+          }
+          else {
+            var latPOI = element.center.lat || 0;
+            var lonPOI = element.center.lon || 0;
+            //log(`element.center.lat`);
+          }
+          //console.log('znova lonPOI = '+lonPOI);
+          //log(`ted pocitam dx z ${lonPOI}`);
+          const dx = lonPOI - lon;
+          const dy = latPOI - lat;
+          const distance = Math.sqrt(dx*dx + dy*dy) * 111;
+          const angleRad = Math.atan2(dy, dx);
+          const angleDeg = angleRad * 180 / Math.PI - heading;
+          const azimuth = (angleDeg + 360) % 360;
+          maxDistance = Math.max(maxDistance, distance);
+          poiList.push({ element, distance, azimuth });
+          //log(`Načteno ${angleRad}, ${angleDeg}, ${azimuth},${dx},${dy} POI`);
+        });
+        
+        
+        function parseOverpassData(data) {
+          data.elements.forEach(element => {
+            if (element.tags && element.tags.name) {
+              const name = element.tags.name;
+              const wikipedia = element.tags.wikipedia;
+              const type = element.type;
+            if (element.lat) {
+              const lat = element.lat || 'N/A';
+              const lon = element.lon || 'N/A';
+            }
+            else {
+              const lat = element.center.lat || 'N/A';
+              const lon = element.center.lon || 'N/A';
+            }
+              console.log(`Typ: ${type}, Název: ${name}, Wikipedia: ${wikipedia}, Souřadnice: ${lat}, ${lon}`);
+            }
+          });
+        }
+
+
+        poiList.forEach(({ element, distance, azimuth }) => {
+          const scale = 40;
+          const margin = 10;
+          const otoc = azimuth;
+          //log(`Pro ${element.tags.name} je azimuth: ${azimuth}`);
+          const r = (distance / maxDistance) * scale;
+          const x = 50 + Math.cos(azimuth * Math.PI / 180) * r;
+          const y = 50 + Math.sin(azimuth * Math.PI / -180) * r;
+          const div = document.createElement('div');
+          const span = document.createElement('span');
+          document.createElement('div')
+         // document.createElement('span')
+          div.className = 'poi';
+         // span.className='arrow';
+          div.style.left = `${x}%`;
+          div.style.top = `${y}%`;
+          div.textContent =  `   ${element.tags.name || element.tags.wikipedia || 'Neznámý'} (${element.tags.historic || element.tags.ele || element.tags.man_made || element.tags.leisure || element.tags.denomination || ''})`;
+          div.onclick = () => {
+            var title = (element.tags.name || '').replace(/\s/g, '_');
+            var wiki = (element.tags.wikipedia || '').replace(/\s/g, '_');
+            log(`Načítám Wikipedii pro: ${title}`);
+            fetch(`https://cs.wikipedia.org/api/rest_v1/page/summary/${wiki}`)
+              .then(res => res.json())
+              .then(info => {
+                const utterance = new SpeechSynthesisUtterance(info.extract);
+                utterance.lang = 'cs-CZ';
+                speechSynthesis.speak(utterance);
+                window.open(`https://cs.wikipedia.org/wiki/${wiki}`, '_blank');
+              });
+          };
+          map.appendChild(div);
+          //div.appendChild(span);
+          document.querySelectorAll('.poi').forEach(poi => {
+            const angle = azimuth;
+            const arrow = poi.querySelector('backround-image');
+            //arrow.style.transform = `rotate(${angle}deg)`;
+          });
+        });
+          
+        log(`Načteno ${poiList.length} POI`);
+        isLoading = false;
+      })
+      .catch(err => {
+        log(`Chyba při načítání POI: ${err}`);
+        isLoading = false;
+      });
+    }
+
+    function updatePosition() {
+      if (isLoading) {
+        log("Čekám na dokončení předchozího načítání...");
+        return;
+      }
+
+      log("Získávám aktuální polohu (timeout 5s)...");
+      navigator.geolocation.watchPosition(pos => {
+        const newLat = pos.coords.latitude;
+        const newLon = pos.coords.longitude;
+        heading = pos.coords.heading || 0;
+        const direction = getDirectionFromHeading(heading);
+        center.lat = newLat;
+        center.lon = newLon;
+        infoDiv.textContent = `Poloha: ${newLat.toFixed(5)}, ${newLon.toFixed(5)} | Směr: ${direction}`;
+        log(`Poloha získána: ${newLat}, ${newLon}, směr: ${direction}`);
+
+        if (lastPosition || getDistance(lastPosition.lat, lastPosition.lon, newLat, newLon) > 1) {
+          center.lat = newLat;
+          center.lon = newLon;
+          //log("Nastaveno center.lat a lon.");
+          lastPosition = { lat: newLat, lon: newLon };
+          getPOIs(center.lat, center.lon, radiusInput.value);
+        } else {
+          log("Pohyb menší než 1 km, neaktualizuji POI.");
+        }
+      }, error => {
+        heading = 0;
+        const direction = getDirectionFromHeading(heading);
+        infoDiv.textContent = `Poloha: fallback Kozomín | Směr: ${direction}`;
+        log("Nepodařilo se získat polohu do 5s, používám fallback Kozomín");
+        getPOIs(center.lat, center.lon, radiusInput.value);
+        
+      }, {
+        enableHighAccuracy: true,
+        timeout: 5000,
+        maximumAge: 0
+      });
+    }
+
+    function getDirectionFromHeading(deg) {
+      const dirs = ['sever', 'severovýchod', 'východ', 'jihovýchod', 'jih', 'jihozápad', 'západ', 'severozápad'];
+      const index = Math.round(deg / 45) % 8;
+      return dirs[index];
+    }
+
+    setInterval(updatePosition, interval);
+    updatePosition();
+  </script>
+</body>
+</html>
