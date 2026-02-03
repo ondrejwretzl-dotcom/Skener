@@ -1,0 +1,316 @@
+<!DOCTYPE html>
+<html lang="cs">
+<head>
+  <meta charset="utf-8">
+  <title>Skener okolí – course-up v3 (radius navctrl) – rotace fix + horní radius (jen tlačítka) + lepší log</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
+  <link rel="icon" type="image/png" href="vokoli2.png">
+
+  <!-- MapLibre -->
+  <link href="https://unpkg.com/maplibre-gl@3.6.1/dist/maplibre-gl.css" rel="stylesheet" />
+  <script src="https://unpkg.com/maplibre-gl@3.6.1/dist/maplibre-gl.js"></script>
+
+  <style>
+    :root{ --ui-bg: rgba(255,255,255,.9); --ui-shadow: 0 1px 4px rgba(0,0,0,.3); --controls-h: 0px; }
+    *{ box-sizing:border-box; }
+    body{ margin:0; font-family: system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; background:#f0f4f7; color:#333; overflow:hidden; }
+    #map{ position:absolute; inset:0; }
+
+    /* ===== MENU KATEGORIÍ (vlevo nahoře) ===== */
+    #left-menu{ position:absolute; top:calc(env(safe-area-inset-top, 0px) + 8px); left:8px; display:flex; flex-direction:column; gap:8px; z-index:10; }
+    .menu-icon{ width:38px; height:38px; background:var(--ui-bg); border-radius:50%; display:flex; align-items:center; justify-content:center; box-shadow:var(--ui-shadow); cursor:pointer; font-size:18px; }
+    .menu-icon.active{ background:#4285F4; color:#fff; }
+
+    /* ===== RADIUS – nahoře uprostřed, jen tlačítka, nezasahuje do ikon vlevo ===== */
+    #controls{ position:absolute; left:53px;
+      background:var(--ui-bg); padding:2px 2px; border-radius:10px; box-shadow:var(--ui-shadow); z-index:11;
+      display:flex; align-items:center; gap:6px; flex-wrap:wrap; max-width:min(720px, calc(100% - 16px)); }
+    .radius-row{ display:flex; align-items:center; gap:6px; flex-wrap:wrap; width:auto; justify-content:center; }
+    .radius-btn{ min-width:64px; height:34px; padding:0 10px; background:#fff; border:1px solid #ddd; border-radius:8px; box-shadow:var(--ui-shadow); cursor:pointer; font-weight:600; }
+    .radius-btn.active{ background:#4285F4; color:#fff; border-color:#4285F4; }
+
+    /* ===== INFO / LEGENDA / LOADING / LOG ===== */
+    #info{ position:absolute; right:8px; bottom:11vh; background:var(--ui-bg); padding:6px 10px; border-radius:10px; box-shadow:var(--ui-shadow); z-index:10; font-size:11px; max-width:240px; text-align:right; }
+    #color-legend{ position:absolute; left:8px; bottom:11vh; background:var(--ui-bg); padding:8px 12px; border-radius:10px; box-shadow:var(--ui-shadow); z-index:10; font-size:11px; }
+    #color-legend .legend-item{ display:flex; align-items:center; gap:8px; margin-bottom:4px; }
+    #color-legend .legend-color{ width:16px; height:16px; border-radius:50%; border:1px solid #ccc; }
+    #loading{ position:absolute; left:50%; top:50%; transform:translate(-50%,-50%); z-index:20; display:none; flex-direction:column; align-items:center; background:rgba(255,255,255,.85); padding:18px; border-radius:10px; box-shadow:var(--ui-shadow); }
+    #loadingIcon{ width:40px; height:40px; }
+    #loadingText{ margin-top:8px; color:#444; }
+    #log{ position:absolute; left:0; bottom:0; width:100%; height:10vh; overflow-y:auto; background:var(--ui-bg); padding:5px; font-size:10px; box-shadow:0 -1px 0 #ccc inset; z-index:10; }
+
+    /* ===== POI PIN (SVG) ===== */
+    .poi-pin{ width:24px; height:24px; display:block; filter:drop-shadow(0 1px 3px rgba(0,0,0,.45)); cursor:pointer; }
+
+    /* ===== POI POPUP ===== */
+    .poi-popup{ background:transparent; pointer-events:auto; cursor:pointer; }
+    .poi-popup .bubble{ position:relative; padding:8px 14px; border-radius:14px; font-size:16px; line-height:1.25; color:var(--fg,#111); background:var(--bg,#fff); box-shadow:0 1px 4px rgba(0,0,0,.35); white-space:nowrap; display:flex; align-items:center; gap:10px; }
+    .poi-popup .bubble .name{ font-weight:700; }
+    .poi-popup .bubble .linklike{ text-decoration: underline; text-underline-offset: 3px; }
+    .poi-popup .bubble::after{ content:""; position:absolute; left:50%; transform:translateX(-50%); top:100%; border-left:7px solid transparent; border-right:7px solid transparent; border-top:9px solid var(--bg,#fff); filter:drop-shadow(0 1px 2px rgba(0,0,0,.25)); }
+    .maplibregl-popup{ max-width:none; }
+    .maplibregl-popup-tip{ display:none; }
+    .maplibregl-popup-content{ background:transparent; box-shadow:none; padding:0; }
+
+    /* RIDER – střed markeru = přesné souřadnice, šipka míří směrem jízdy */
+    .rider{position:relative;width:42px;height:42px; z-index:2147483647;}
+    .rider .arrow{position:absolute; left:0; top:0; width:42px; height:42px; transform-origin:50% 50%; transform:rotate(0deg); filter:drop-shadow(0 1px 2px rgba(0,0,0,.35));}
+
+    /* MAP CONTROLS poloha – pod radius panelem (nepřekrývat) */
+    .maplibregl-ctrl-top-right{ right:8px; top: calc(var(--controls-h) + env(safe-area-inset-top, 0px) + 8px); }
+
+    /* ===== ACTION SHEET ===== */
+    #actionSheet{ position:fixed; inset:0; display:none; align-items:flex-end; justify-content:center; background:rgba(0,0,0,.35); z-index:50; }
+    .sheet{ width:100%; background:#fff; border-top-left-radius:16px; border-top-right-radius:16px; box-shadow:0 -2px 10px rgba(0,0,0,.2); padding:16px; }
+    .sheet-title{ font-size:18px; font-weight:700; text-align:center; margin-bottom:12px; }
+    .btn-row{ display:flex; gap:12px; flex-wrap:wrap; }
+    .big-btn{ flex:1 1 45%; background:#f3f4f6; border:none; border-radius:12px; padding:18px; font-size:18px; font-weight:700; cursor:pointer; box-shadow:0 1px 4px rgba(0,0,0,.15); }
+    .big-btn:active{ transform:scale(.98); }
+    .btn-primary{ background:#e8f0fe; color:#174ea6; }
+    .btn-success{ background:#e8f5e9; color:#1b5e20; }
+    .btn-danger{ background:#fff0f1; color:#b42318; }
+  </style>
+</head>
+<body>
+  <div id="map"></div>
+
+  <div id="loading">
+    <svg id="loadingIcon" viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
+      <circle cx="50" cy="50" r="40" stroke="#4285F4" stroke-width="10" fill="none" stroke-dasharray="180 80" stroke-linecap="round">
+        <animateTransform attributeName="transform" type="rotate" from="0 50 50" to="360 50 50" dur="1.4s" repeatCount="indefinite"/>
+      </circle>
+    </svg>
+    <p id="loadingText">Načítám data...</p>
+  </div>
+
+  <div id="left-menu">
+    <div class="menu-icon active" id="toggleHistoric" title="Hrady a zámky">🏰</div>
+    <div class="menu-icon" id="toggleTowers" title="Rozhledny">🗼</div>
+    <div class="menu-icon" id="togglePeaks" title="Vrcholy">⛰️</div>
+    <div class="menu-icon" id="toggleNature" title="Rezervace">🌿</div>
+    <div class="menu-icon" id="toggleRestaurace" title="Jídlo">🍽️</div>
+    <div class="menu-icon" id="toggleChurches" title="Kostely">⛪</div>
+  </div>
+
+  <!-- RADIUS nahoře – jen tlačítka (bez textu) -->
+  <div id="controls">
+    <div class="radius-row">
+      <button class="radius-btn" data-value="0.5">0,5 km</button>
+      <button class="radius-btn active" data-value="1.5">1,5 km</button>
+      <button class="radius-btn" data-value="2">2 km</button>
+      <button class="radius-btn" data-value="5">5 km</button>
+      <button class="radius-btn" data-value="10">10 km</button>
+      <button class="radius-btn" data-value="15">15 km</button>
+    </div>
+  </div>
+
+  <div id="color-legend"></div>
+  <div id="info">Načítám polohu…</div>
+  <div id="log"></div>
+
+  <!-- Action Sheet (Wiki / Web) -->
+  <div id="actionSheet">
+    <div class="sheet">
+      <div class="sheet-title" id="sheetTitle">Akce</div>
+      <div class="btn-row" id="sheetBtns"></div>
+    </div>
+  </div>
+
+<script>
+// ===== NASTAVITELNÁ PERIODA OBNOVY =====
+// Úprava dle potřeby (ms): kontrola polohy + směru, vynucení course-up
+const REFRESH_MS = 10000;
+
+// ===== STATE =====
+let map=null, mapReady=false;
+let lastPosition=null, lastFetchPos=null, lastFetchRadius=null;
+let heading=0; let isLoading=false; let poiRequestId=0; let inflight=0;
+let riderMarker=null; let radiusVal=3; // km
+const MIN_MOVE_KM = 0.05; // 50 m
+
+// ===== ROTATION (ANTI-JITTER) =====
+let courseUp = true;
+const normBr = b => ((b % 360) + 360) % 360;
+function shortestStep(from, to){ const f=normBr(from), t=normBr(to); let d=t-f; if(d>180) d-=360; if(d<-180) d+=360; return f+d; }
+let animTargetBearing = null;             // cílový bearing animace
+const MIN_BEARING_DELTA = 3;              // pod 3° neanimovat
+function setArrowRotation(head, refBearing){
+  const el = riderMarker?.getElement?.(); if(!el) return;
+  const a = el.querySelector('.arrow'); if(!a) return;
+  const rel = Number.isFinite(head) ? normBr(head - refBearing) : 0;
+  a.style.transform = 'rotate('+rel+'deg)';
+}
+function rotateToBearing(target){
+  if(!map) return;
+  const cur = normBr(map.getBearing());
+  const tgt = shortestStep(cur, target);
+  const delta = Math.abs(normBr(tgt - cur));
+  animTargetBearing = tgt;          // šipku vztáhneme vůči cíli, ne vůči dočasnému bearingu mapy
+  setArrowRotation(heading, tgt);
+  if(delta < MIN_BEARING_DELTA){    // drobné změny bez animace
+    animTargetBearing = null;
+    map.setBearing(tgt);
+    return;
+  }
+  map.easeTo({ bearing: tgt, duration: 280, easing: t=>t, animate:true });
+  map.once('moveend', ()=>{ animTargetBearing=null; setArrowRotation(heading, map.getBearing()); });
+}
+
+// POI per kategorie: pole objektů {marker, popup}
+const poiByCat = {
+  toggleHistoric: [],
+  toggleTowers: [],
+  togglePeaks: [],
+  toggleNature: [],
+  toggleRestaurace: [],
+  toggleChurches: []
+};
+
+const logDiv=document.getElementById('log');
+const infoDiv=document.getElementById('info');
+const legendEl=document.getElementById('color-legend');
+const loadingEl=document.getElementById('loading');
+const menuIcons=document.querySelectorAll('.menu-icon');
+
+// Action sheet (nová logika)
+const actionSheet=document.getElementById('actionSheet');
+const sheetTitle=document.getElementById('sheetTitle');
+const sheetBtns=document.getElementById('sheetBtns');
+let currentPoi=null; let currentUtter=null; let isPaused=false;
+function showSheet(title, buttons){ sheetTitle.textContent=title||'Akce'; sheetBtns.innerHTML=''; buttons.forEach(btn=>{ const b=document.createElement('button'); b.className = 'big-btn '+(btn.cl||''); b.textContent=btn.label; b.onclick=btn.onClick; sheetBtns.appendChild(b); }); actionSheet.style.display='flex'; }
+function hideSheet(){ actionSheet.style.display='none'; }
+function stopTTS(){ try{ speechSynthesis.cancel(); currentUtter=null; isPaused=false; }catch(e){} }
+function pauseTTS(){ try{ speechSynthesis.pause(); isPaused=true; }catch(e){} }
+function resumeTTS(){ try{ speechSynthesis.resume(); isPaused=false; }catch(e){} }
+function fetchWikiText(wikiTag){ const page= wikiTag.includes(':')? wikiTag.split(':').slice(1).join(':') : wikiTag; const title=encodeURIComponent(page.replace(/\s/g,'_')); const url='https://cs.wikipedia.org/api/rest_v1/page/summary/'+title; return fetch(url).then(r=>r.json()).then(d=> d.extract||d.description||''); }
+function playWiki(wikiTag){ if(currentUtter && isPaused){ resumeTTS(); return; } if(currentUtter){ stopTTS(); } setLoading(true); fetchWikiText(wikiTag).then(txt=>{ setLoading(false); if(!txt) return; const u=new SpeechSynthesisUtterance(txt); u.lang='cs-CZ'; u.onend=()=>{ currentUtter=null; isPaused=false; }; u.onerror=()=>{ currentUtter=null; isPaused=false; }; currentUtter=u; speechSynthesis.speak(u); }).catch(()=>setLoading(false)); }
+
+function log(m){ const d=document.createElement('div'); d.textContent=`${new Date().toLocaleTimeString()} ${m}`; logDiv.prepend(d) }
+function setLoading(s){ isLoading=s; loadingEl.style.display=s?'flex':'none' }
+
+// HELPERS
+const deg2rad=d=>d*Math.PI/180;
+function getDistance(a,b,c,d){ const R=6371, dLat=deg2rad(c-a), dLon=deg2rad(d-b); const x=Math.sin(dLat/2)**2 + Math.cos(deg2rad(a))*Math.cos(deg2rad(c))*Math.sin(dLon/2)**2; return R*2*Math.atan2(Math.sqrt(x),Math.sqrt(1-x)) }
+function getDirectionFromHeading(deg){ if(deg==null||deg===undefined) return 'N/A'; const dirs=['S','SV','V','JV','J','JZ','Z','SZ']; return dirs[Math.round(deg/45)%8] }
+function getPoiColor(distance,max){ const r=Math.min(distance/max,1); if(r<1/3) return `rgb(255, ${Math.round(255*(r*3))}, 0)`; if(r<2/3) return `rgb(${Math.round(255*(1-(r-1/3)*3))},255,0)`; return `rgb(180, ${Math.round(255*(1-(r-2/3)*3))}, ${Math.round(255*((r-2/3)*3))})` }
+function textColorForBg(rgb){ const m=rgb.match(/rgb\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*\)/i); let r=0,g=0,b=0; if(m){r=+m[1];g=+m[2];b=+m[3];} const L=(0.2126*r+0.7152*g+0.0722*b)/255; return L<0.55?'#fff':'#111' }
+function updateLegend(maxR){ legendEl.innerHTML=''; const steps=5; for(let i=1;i<=steps;i++){ const d=(maxR/steps)*i, c=getPoiColor(d,maxR); const e=document.createElement('div'); e.className='legend-item'; e.innerHTML='<span class="legend-color" style="background:'+c+'"></span> '+d.toFixed(1)+' km'; legendEl.appendChild(e) } }
+function fitMapToRadius(lat,lon,km){ if(!map) return; if(!Number.isFinite(lat)||!Number.isFinite(lon)||!Number.isFinite(km)||km<=0) return; const dLat=km/111; const dLon=km/(111*(Math.cos(deg2rad(lat))||1e-6)); const sw=new maplibregl.LngLat(lon-dLon,lat-dLat), ne=new maplibregl.LngLat(lon+dLon,lat+dLat); const b=new maplibregl.LngLatBounds(sw,ne); map.fitBounds(b,{padding:24,duration:500,animate:true}) }
+
+// MAP
+function initMap(lat,lon){ if(mapReady) return; map=new maplibregl.Map({container:'map', style:'https://tiles.openfreemap.org/styles/liberty', center:[lon,lat], zoom:13, pitch:30, bearing:0, antialias:true}); map.addControl(new maplibregl.NavigationControl(),'top-right'); map.on('load',()=>{ mapReady=true;
+  // symboly čitelné při rotaci
+  try{ const layers = map.getStyle().layers||[]; layers.forEach(l=>{ if(l.type==='symbol'){
+    try{ map.setLayoutProperty(l.id,'text-rotation-alignment','viewport'); }catch(e){}
+    try{ map.setLayoutProperty(l.id,'icon-rotation-alignment','viewport'); }catch(e){}
+    try{ map.setLayoutProperty(l.id,'text-pitch-alignment','viewport'); }catch(e){}
+    try{ map.setLayoutProperty(l.id,'icon-pitch-alignment','viewport'); }catch(e){}
+  }});}catch(e){}
+  if(lastPosition){ fitMapToRadius(lastPosition.lat,lastPosition.lon,radiusVal); updateRider(lastPosition.lat,lastPosition.lon,heading); schedulePOIFetch(true); }
+}); }
+
+// RIDER – anchor na střed markeru (center)
+function ensureRider(){ if(riderMarker) return riderMarker; const el=document.createElement('div'); el.className='rider'; el.innerHTML = `
+  <svg class="arrow" viewBox="0 0 24 24" aria-hidden="true">
+    <path fill="#1976d2" d="M12 2l6.5 18.5L12 16l-6.5 4.5L12 2z"/>
+  </svg>`; riderMarker=new maplibregl.Marker({element:el, anchor:'center'}); return riderMarker; }
+function updateRider(lat,lon,head){ if(!Number.isFinite(lat)||!Number.isFinite(lon)||!map) return; ensureRider(); riderMarker.setLngLat([lon,lat]); if(!riderMarker._map) riderMarker.addTo(map); const refBr = (animTargetBearing!=null)? animTargetBearing : map.getBearing(); setArrowRotation(head, refBr); }
+
+// POI RENDER (Marker + Popup) – upravené bubliny (linklike + action-sheet), bližší výš
+function clearCategory(cat){ (poiByCat[cat]||[]).forEach(o=>{ try{o.marker.remove()}catch(e){} try{o.popup.remove()}catch(e){} }); poiByCat[cat]=[] }
+function renderPOIsCategory(pois, radiusKm, cat){ clearCategory(cat);
+  // řazení: vzdálenější dřív, blízké naposledy => navrchu
+  pois.sort((a,b)=> (b.distanceKm||0) - (a.distanceKm||0));
+  pois.forEach(p=>{ if(!Number.isFinite(p.lat)||!Number.isFinite(p.lon)) return; const bg=getPoiColor(p.distanceKm,radiusKm), fg=textColorForBg(bg);
+    const label = (cat==='togglePeaks' && p.ele) ? `${p.name} (${p.ele} m)` : p.name;
+    const el=document.createElement('div'); el.innerHTML='<svg class="poi-pin" viewBox="0 0 24 24" aria-hidden="true"><path fill="'+bg+'" d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7z"></path><circle cx="12" cy="9" r="2.6" fill="rgba(255,255,255,0.92)"></circle></svg>';
+    const marker=new maplibregl.Marker({element:el, anchor:'bottom'}).setLngLat([p.lon,p.lat]).addTo(map);
+    const wrap=document.createElement('div'); wrap.className='poi-popup'; const b=document.createElement('div'); b.className='bubble'; const hasLink = !!(p.wiki || p.website); const nameSpan = document.createElement('span'); nameSpan.className = 'name' + (hasLink?' linklike':''); nameSpan.textContent = label; b.appendChild(nameSpan); b.style.setProperty('--bg',bg); b.style.setProperty('--fg',fg); wrap.appendChild(b);
+    const popup=new maplibregl.Popup({ closeButton:false, closeOnClick:false, anchor:'bottom', offset:28 }).setDOMContent(wrap).setLngLat([p.lon,p.lat]).addTo(map);
+    try{ const z = 100000 - Math.round((p.distanceKm||0)*100); popup._container.style.zIndex = String(z); }catch(e){}
+    const clickHandler = (ev)=>{ ev.stopPropagation(); handlePoiAction(p); };
+    wrap.addEventListener('click', clickHandler); b.addEventListener('click', clickHandler); el.addEventListener('click', clickHandler);
+    poiByCat[cat].push({marker,popup});
+  });
+}
+
+function handlePoiAction(p){ currentPoi=p; const hasWiki=!!p.wiki; const hasWeb=!!p.website; if(hasWiki && !hasWeb){
+  showSheet(p.name,[ {label:'▶︎ Přehrát', cl:'btn-primary', onClick:()=>playWiki(p.wiki)}, {label:'⏸︎ Pauza', cl:'', onClick:()=>pauseTTS()}, {label:'Zavřít', cl:'btn-danger', onClick:()=>{ hideSheet(); stopTTS(); }} ]);
+} else if(!hasWiki && hasWeb){
+  showSheet(p.name,[ {label:'🌐 Otevřít', cl:'btn-success', onClick:()=>{ try{ window.open(p.website,'_blank','noopener'); }catch(e){} }}, {label:'Zavřít', cl:'btn-danger', onClick:()=>{ hideSheet(); }} ]);
+} else if(hasWiki && hasWeb){
+  showSheet(p.name,[ {label:'📘 Wiki – přehrát', cl:'btn-primary', onClick:()=>playWiki(p.wiki)}, {label:'🌐 Web – otevřít', cl:'btn-success', onClick:()=>{ try{ window.open(p.website,'_blank','noopener'); }catch(e){} }}, {label:'⏸︎ Pauza', cl:'', onClick:()=>pauseTTS()}, {label:'Zavřít', cl:'btn-danger', onClick:()=>{ hideSheet(); stopTTS(); }} ]);
+} }
+
+function openWebsite(u){ try{ window.open(u, '_blank', 'noopener'); }catch(e){} }
+
+// ===== LEPŠÍ LOGOVÁNÍ FETCH jako ve v4 (stručné a jasné) =====
+async function fetchWithRetry(url,opt,id,ctx='',retries=3,delay=1500){
+  let attempt=0; const maxA=retries+1; const t0=performance.now();
+  while(true){ attempt++;
+    try{
+      if(id!==poiRequestId) throw new Error('CANCELLED');
+      const r=await fetch(url,opt);
+      if(!r.ok) throw new Error('HTTP '+r.status);
+      if(id!==poiRequestId) throw new Error('CANCELLED');
+      const data=await r.json();
+      log(`OK ${ctx} req=${id} in ${(performance.now()-t0).toFixed(0)}ms elems=${(data.elements||[]).length}`);
+      return data;
+    }catch(e){
+      if(e.message==='CANCELLED'){ log(`CANCEL ${ctx} req=${id}`); throw e; }
+      if(attempt>=maxA){ log(`ERROR ${ctx} req=${id} ${e.message}`); throw e; }
+      log(`RETRY ${ctx} req=${id} in ${delay}ms (${attempt}/${maxA})`);
+      await new Promise(res=>setTimeout(res,delay));
+    }
+  }
+}
+
+const queryParts={
+  toggleHistoric: 'nwr[historic~"^(castle|ruins|chateau|fortress)$"](around:{{radius}},{{lat}},{{lon}})(if:t["name"]);',
+  toggleTowers: 'nwr["man_made"="tower"]["tower:type"="observation"](around:{{radius}},{{lat}},{{lon}})(if:t["name"]);',
+  togglePeaks: 'nwr["natural"="peak"](around:{{radius}},{{lat}},{{lon}})(if:t["ele"] > 500)(if:t["name"]);',
+  toggleNature: 'nwr["leisure"="nature_reserve"](around:{{radius}},{{lat}},{{lon}})(if:t["name"]);',
+  toggleRestaurace: 'nwr["amenity"~"cafe|bar|restaurant"](around:{{radius}},{{lat}},{{lon}})(if:t["name"]);',
+  toggleChurches: 'nwr[building~"church|cathedral|basilica"](around:{{radius}},{{lat}},{{lon}})(if:t["name"]);'
+};
+
+menuIcons.forEach(ic=> ic.addEventListener('click', ()=>{ ic.classList.toggle('active'); if(!ic.classList.contains('active')){ clearCategory(ic.id); } schedulePOIFetch(true); }));
+
+function schedulePOIFetch(force=false){ if(!lastPosition||!mapReady) return; const moved = !lastFetchPos || getDistance(lastFetchPos.lat,lastFetchPos.lon,lastPosition.lat,lastPosition.lon) > MIN_MOVE_KM; const radiusChanged = lastFetchRadius!==radiusVal; if(force || moved || radiusChanged){ getPOIs(lastPosition.lat,lastPosition.lon,radiusVal); lastFetchPos={...lastPosition}; lastFetchRadius=radiusVal; } }
+
+function getPOIs(lat, lon, radiusKm){ if(!mapReady) return; fitMapToRadius(lat,lon,radiusKm); poiRequestId++; const id=poiRequestId; inflight=0; setLoading(true); const activeCats=Array.from(menuIcons).filter(i=>i.classList.contains('active')).map(i=>i.id); if(!activeCats.length){ Object.keys(poiByCat).forEach(clearCategory); setLoading(false); log('NO CATS'); return; }
+  activeCats.forEach(categoryId=>{
+    inflight++;
+    const q=queryParts[categoryId];
+    const body=q.replace(/\{\{lat\}\}/g,lat).replace(/\{\{lon\}\}/g,lon).replace(/\{\{radius\}\}/g,radiusKm*1000);
+    const query='[out:json][timeout:25];('+body+'); out center;';
+    const ctx=`cat=${categoryId}`;
+    log(`REQ ${ctx} req=${id} r=${radiusKm}km`);
+    fetchWithRetry('https://overpass-api.de/api/interpreter', {method:'POST', body:query}, id, ctx)
+      .then(data=>{ if(id!==poiRequestId) return; const pois=(data.elements||[]).map(e=>{ const la=e.lat ?? (e.center?e.center.lat:undefined); const lo=e.lon ?? (e.center?e.center.lon:undefined); if(!Number.isFinite(la)||!Number.isFinite(lo)) return null; const website = e.tags?.website || e.tags?.url || e.tags?.['contact:website'] || null; return { name:(e.tags&&e.tags.name)?e.tags.name:'Neznámý', ele:e.tags&&e.tags.ele?e.tags.ele:null, lat:la, lon:lo, distanceKm:getDistance(lat,lon,la,lo), wiki:(e.tags&&e.tags.wikipedia)?e.tags.wikipedia:'', website }; }).filter(Boolean); renderPOIsCategory(pois, radiusKm, categoryId); log(`RENDER cat=${categoryId} n=${pois.length}`); })
+      .catch(err=>{ if(err.message!=='CANCELLED') log(`ERR cat=${categoryId} ${err}`); })
+      .finally(()=>{ inflight--; if(inflight<=0) setLoading(false); });
+  });
+}
+
+// ===== NAV CONTROL BELOW RADIUS: sync height =====
+function syncControlsBelowRadius(){ const c=document.getElementById('controls'); if(!c) return; const h=c.offsetHeight||0; document.documentElement.style.setProperty('--controls-h', h+'px'); }
+window.addEventListener('load', syncControlsBelowRadius);
+const ro = new ResizeObserver(syncControlsBelowRadius); const controlsEl = document.getElementById('controls'); if(controlsEl) ro.observe(controlsEl);
+window.addEventListener('resize', syncControlsBelowRadius);
+
+// RADIUS UI
+const radiusBtns=document.querySelectorAll('.radius-btn');
+function setRadius(km){ const k=parseFloat(km); if(!Number.isFinite(k)||k<=0) return; radiusVal=k; radiusBtns.forEach(b=>b.classList.toggle('active', parseFloat(b.getAttribute('data-value'))===k)); schedulePOIFetch(true); updateLegend(radiusVal); syncControlsBelowRadius(); }
+radiusBtns.forEach(b=> b.addEventListener('click', ()=> setRadius(parseFloat(b.getAttribute('data-value'))) ));
+
+// GEO – pravidelný update přes REFRESH_MS + vynucení course-up
+let updateIntervalId=null;
+function updatePosition(){ if(isLoading) return; navigator.geolocation.getCurrentPosition(pos=>{ const crd=pos.coords; const latitude=crd.latitude, longitude=crd.longitude, h=crd.heading, altitude=crd.altitude; if(!Number.isFinite(latitude)||!Number.isFinite(longitude)) return; heading = Number.isFinite(h)?h:heading; lastPosition={lat:latitude, lon:longitude}; if(!mapReady) initMap(latitude, longitude); if(mapReady){ updateRider(latitude, longitude, heading); if(courseUp && Number.isFinite(heading)) rotateToBearing(normBr(heading)); schedulePOIFetch(); } infoDiv.textContent='Poloha: '+latitude.toFixed(5)+', '+longitude.toFixed(5)+' | Směr: '+getDirectionFromHeading(heading)+' | Nadm. v: '+(altitude!=null?Math.round(altitude)+' m':'N/A'); }, err=>{ infoDiv.textContent='GPS nedostupná – fallback'; if(!lastPosition){ lastPosition={lat:50.2333, lon:14.3833}; if(!mapReady) initMap(lastPosition.lat, lastPosition.lon); if(mapReady){ updateRider(lastPosition.lat,lastPosition.lon, heading); schedulePOIFetch(true); } } }, { enableHighAccuracy:true, timeout:8000, maximumAge:REFRESH_MS }); }
+
+updateLegend(radiusVal);
+updatePosition();
+updateIntervalId=setInterval(updatePosition, REFRESH_MS);
+</script>
+</body>
+</html>
