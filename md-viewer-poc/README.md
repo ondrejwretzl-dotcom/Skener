@@ -4,12 +4,12 @@ Lehký desktop viewer pro `.md` soubory ve stylu podobném GitHubu.
 
 ## Co umí
 
-- otevření `.md` / `.markdown` / `.mdown` souboru přes tlačítko,
-- drag & drop markdown souboru do okna,
-- GitHub-like vzhled + zvýraznění syntaxe,
-- bezpečné sanitizování HTML,
-- ruční refresh souboru tlačítkem **Znovu načíst**,
-- **funguje i bez internetu** (styly i JS knihovny jsou načítané lokálně z balíčku aplikace).
+- otevření `.md` souboru přes tlačítko,
+- drag & drop `.md` souboru do okna,
+- GitHub-like vzhled (`github-markdown-css`),
+- zvýraznění syntaxe v code blocích (`highlight.js`),
+- bezpečné sanitizování HTML (`DOMPurify`),
+- ruční refresh souboru tlačítkem **Znovu načíst**.
 
 ---
 
