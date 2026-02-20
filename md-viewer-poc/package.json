@@ -1,0 +1,42 @@
+{
+  "name": "md-github-viewer-poc",
+  "version": "0.1.0",
+  "description": "Portable Windows Markdown viewer with GitHub-like rendering",
+  "main": "src/main.js",
+  "author": "Skener POC",
+  "license": "MIT",
+  "scripts": {
+    "start": "electron .",
+    "pack": "electron-builder --dir",
+    "dist:win": "electron-builder --win portable",
+    "check": "node --check src/main.js && node --check src/preload.js && node --check src/renderer.js"
+  },
+  "dependencies": {
+    "dompurify": "^3.2.6",
+    "highlight.js": "^11.11.1",
+    "marked": "^15.0.12",
+    "github-markdown-css": "^5.8.1"
+  },
+  "devDependencies": {
+    "electron": "^35.1.5",
+    "electron-builder": "^25.1.8"
+  },
+  "build": {
+    "appId": "cz.skener.mdviewer",
+    "productName": "MD Github Viewer",
+    "files": [
+      "src/**/*",
+      "package.json"
+    ],
+    "directories": {
+      "buildResources": "assets",
+      "output": "release"
+    },
+    "win": {
+      "target": [
+        "portable"
+      ],
+      "artifactName": "${productName}-${version}-portable.${ext}"
+    }
+  }
+}

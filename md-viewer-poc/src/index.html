@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="cs">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>MD Github Viewer</title>
+    <link rel="stylesheet" href="../node_modules/github-markdown-css/github-markdown.css" />
+    <link rel="stylesheet" href="../node_modules/highlight.js/styles/github.css" />
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <header class="toolbar">
+      <button id="openFileButton">Otevřít .md</button>
+      <button id="reloadButton" disabled>Znovu načíst</button>
+      <span id="fileMeta">Žádný soubor</span>
+    </header>
+
+    <main class="content">
+      <article id="markdownHost" class="markdown-body"></article>
+      <section id="emptyState">
+        <h1>Markdown Viewer</h1>
+        <p>Otevři soubor <code>.md</code> a zobrazí se v podobném stylu jako na GitHubu.</p>
+      </section>
+    </main>
+
+    <script src="../node_modules/marked/marked.min.js"></script>
+    <script src="../node_modules/highlight.js/lib/common.min.js"></script>
+    <script src="../node_modules/dompurify/dist/purify.min.js"></script>
+    <script src="./renderer.js"></script>
+  </body>
+</html>
