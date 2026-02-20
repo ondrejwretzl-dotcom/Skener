@@ -1,0 +1,46 @@
+name: Build Windows Portable Viewer
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - 'md-viewer-poc/**'
+      - '.github/workflows/build-windows-portable.yml'
+
+jobs:
+  build-portable:
+    runs-on: windows-latest
+    defaults:
+      run:
+        working-directory: md-viewer-poc
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: md-viewer-poc/package.json
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Build portable exe
+        run: npm run dist:win
+
+      - name: Upload portable artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: md-github-viewer-portable
+          path: md-viewer-poc/release/*.exe
+          if-no-files-found: error
+
+      - name: Upload no-exe web artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: md-viewer-web-no-exe
+          path: md-viewer-poc/web-viewer/index.html
+          if-no-files-found: error
