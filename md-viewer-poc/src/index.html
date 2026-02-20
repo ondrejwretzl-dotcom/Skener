@@ -4,8 +4,8 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>MD Github Viewer</title>
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/github-markdown-css/5.8.1/github-markdown.min.css" />
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.11.1/styles/github.min.css" />
+    <link rel="stylesheet" href="../node_modules/github-markdown-css/github-markdown.css" />
+    <link rel="stylesheet" href="../node_modules/highlight.js/styles/github.css" />
     <link rel="stylesheet" href="./styles.css" />
   </head>
   <body>
@@ -23,6 +23,9 @@
       </section>
     </main>
 
+    <script src="../node_modules/marked/marked.min.js"></script>
+    <script src="../node_modules/highlight.js/lib/common.min.js"></script>
+    <script src="../node_modules/dompurify/dist/purify.min.js"></script>
     <script src="./renderer.js"></script>
   </body>
 </html>

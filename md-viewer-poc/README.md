@@ -15,37 +15,17 @@ Lehký desktop viewer pro `.md` soubory ve stylu podobném GitHubu.
 
 ## Jak to dostat z GitHubu na Windows desktop (doporučeno)
 
-> Cíl: stáhnout hotový `.exe` bez řešení Node.js lokálně.
-
 1. Otevři svůj repozitář na GitHubu.
 2. Jdi na záložku **Actions**.
 3. Vyber workflow **Build Windows Portable Viewer**.
-4. Klikni **Run workflow** (na hlavní větvi nebo na větvi, kde je viewer).
-5. Po doběhnutí workflow otevři konkrétní run a v sekci **Artifacts** stáhni `md-github-viewer-portable`.
-6. Rozbal ZIP artifact a zkopíruj `.exe` na plochu.
-7. Spusť `.exe` (u SmartScreen případně klikni na **More info** → **Run anyway**).
-
-Výsledek: přenosná aplikace bez instalačního wizardu.
+4. Klikni **Run workflow**.
+5. Po doběhnutí workflow stáhni artifact `md-github-viewer-portable`.
+6. Rozbal ZIP a zkopíruj `.exe` na plochu.
+7. Spusť `.exe` (u SmartScreen případně **More info** → **Run anyway**).
 
 ---
 
 ## Lokální build na vlastním Windows PC (alternativa)
-
-Pokud chceš buildovat mimo GitHub Actions:
-
-1. Nainstaluj Node.js LTS (doporučeno 22+).
-2. V terminálu přejdi do `md-viewer-poc`.
-3. Spusť:
-## Rychlé spuštění (vývoj)
-
-```bash
-npm install
-npm run start
-```
-
-## Build portable `.exe` bez instalace
-
-Na Windows:
 
 ```bash
 npm install
@@ -66,13 +46,13 @@ npm run start
 ```
 
 ---
-Výstup bude v `release/`, typicky soubor jako:
 
-`MD Github Viewer-0.1.0-portable.exe`
+## Troubleshooting
 
-Ten můžeš přenést na jiný Windows počítač a spouštět bez instalačního wizardu.
-
-## Poznámky k POC
-
-- Je to **viewer-only** (bez editace).
-- Pro GitHub-like vzhled se používá CSS z CDN (vyžaduje internet). Pokud chceš full offline režim, lze CSS přibalit lokálně v dalším kroku.
+- **Aplikace se otevře, ale nejde načíst `.md`**:
+  - ověř, že soubor fyzicky existuje a není zamčený jiným programem,
+  - pokud byl přesunut/smazán, otevři ho znovu tlačítkem **Otevřít .md**,
+  - vyzkoušej cestu bez speciálních omezení (např. `C:\Users\<ty>\Documents`).
+- **Po spuštění je prázdné okno / chyba inicializace**:
+  - spusť aktuální build z artifactu znovu, případně stáhni nový artifact,
+  - zkontroluj, že jsi rozbalil celý ZIP, ne jen samotné `.exe` vytržené z balíčku.

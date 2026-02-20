@@ -1,9 +1,3 @@
-const { marked } = require('marked');
-const hljs = require('highlight.js');
-const createDOMPurify = require('dompurify');
-
-const DOMPurify = createDOMPurify(window);
-
 const openFileButton = document.getElementById('openFileButton');
 const reloadButton = document.getElementById('reloadButton');
 const fileMeta = document.getElementById('fileMeta');
@@ -11,6 +5,11 @@ const markdownHost = document.getElementById('markdownHost');
 const emptyState = document.getElementById('emptyState');
 
 let currentPath = null;
+
+if (!window.marked || !window.hljs || !window.DOMPurify) {
+  alert('Chyba inicializace: chybí Markdown knihovny. Spusť prosím znovu aplikaci.');
+  throw new Error('Missing markdown libraries in renderer context.');
+}
 
 marked.setOptions({
   gfm: true,
@@ -89,8 +88,9 @@ window.addEventListener('drop', async (event) => {
     return;
   }
 
-  if (!file.name.toLowerCase().endsWith('.md')) {
-    alert('Podporované jsou pouze .md soubory.');
+  const fileName = file.name.toLowerCase();
+  if (!fileName.endsWith('.md') && !fileName.endsWith('.markdown') && !fileName.endsWith('.mdown')) {
+    alert('Podporované jsou pouze .md, .markdown a .mdown soubory.');
     return;
   }
 
