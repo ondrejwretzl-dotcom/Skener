@@ -12,10 +12,8 @@
     "check": "node --check src/main.js && node --check src/preload.js && node --check src/renderer.js"
   },
   "dependencies": {
-    "dompurify": "^3.2.6",
     "highlight.js": "^11.11.1",
-    "marked": "^15.0.12",
-    "github-markdown-css": "^5.8.1"
+    "marked": "^15.0.12"
   },
   "devDependencies": {
     "electron": "^35.1.5",

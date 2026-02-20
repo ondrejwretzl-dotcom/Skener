@@ -37,3 +37,10 @@ jobs:
           name: md-github-viewer-portable
           path: md-viewer-poc/release/*.exe
           if-no-files-found: error
+
+      - name: Upload no-exe web artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: md-viewer-web-no-exe
+          path: md-viewer-poc/web-viewer/index.html
+          if-no-files-found: error

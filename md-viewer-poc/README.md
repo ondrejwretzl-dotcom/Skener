@@ -2,57 +2,62 @@
 
 Lehký desktop viewer pro `.md` soubory ve stylu podobném GitHubu.
 
+## Důležité k antiviru/SmartScreen (Windows)
+
+Pokud je aplikace **nepodepsaná**, Windows/antivir ji může označit jako „unknown app“.
+To není bug v kódu, ale reputační/podpisová politika Windows.
+
+### Jak to řešit správně
+
+1. Použít **code signing certifikát** (EV ideálně) při buildu `.exe`.
+2. Distribuovat build opakovaně pod stejným podpisem (buduje se reputace).
+3. Pokud nechceš `.exe`, použij alternativu níže (**no-exe web viewer**).
+
+---
+
 ## Co umí
 
-- otevření `.md` souboru přes tlačítko,
-- drag & drop `.md` souboru do okna,
-- GitHub-like vzhled (`github-markdown-css`),
-- zvýraznění syntaxe v code blocích (`highlight.js`),
-- bezpečné sanitizování HTML (`DOMPurify`),
-- ruční refresh souboru tlačítkem **Znovu načíst**.
+- otevření `.md` / `.markdown` / `.mdown` souboru přes tlačítko,
+- drag & drop markdown souboru do okna,
+- GitHub-like vzhled,
+- ruční refresh souboru tlačítkem **Znovu načíst**,
+- diagnostický log souboru při chybě knihovny/parsování.
 
 ---
 
-## Jak to dostat z GitHubu na Windows desktop (doporučeno)
+## Jak to dostat z GitHubu na Windows desktop
 
-1. Otevři svůj repozitář na GitHubu.
-2. Jdi na záložku **Actions**.
+1. Otevři repozitář na GitHubu.
+2. Jdi do **Actions**.
 3. Vyber workflow **Build Windows Portable Viewer**.
 4. Klikni **Run workflow**.
-5. Po doběhnutí workflow stáhni artifact `md-github-viewer-portable`.
-6. Rozbal ZIP a zkopíruj `.exe` na plochu.
-7. Spusť `.exe` (u SmartScreen případně **More info** → **Run anyway**).
+5. Stáhni artifact:
+   - `md-github-viewer-portable` (klasická `.exe` varianta), nebo
+   - `md-viewer-web-no-exe` (HTML varianta bez `.exe`).
 
 ---
 
-## Lokální build na vlastním Windows PC (alternativa)
+## Varianta 1: Portable `.exe`
 
-```bash
-npm install
-npm run dist:win
-```
+Spusť `MD Github Viewer-0.1.0-portable.exe`.
 
-Výstup je v `release/`, typicky:
-
-`MD Github Viewer-0.1.0-portable.exe`
+Pokud SmartScreen varuje:
+- **More info** → **Run anyway** (u interního testování),
+- pro veřejnou distribuci doporučen podpis certifikátem.
 
 ---
 
-## Vývojové spuštění
+## Varianta 2: Bez `.exe` (méně falešných AV poplachů)
 
-```bash
-npm install
-npm run start
-```
+Použij `web-viewer/index.html`:
+- otevři soubor v prohlížeči (Edge/Chrome),
+- vyber markdown soubor přes file picker.
+
+Tato varianta je nejjednodušší na distribuci a běžně nevyvolává SmartScreen blokaci jako neznámé `.exe`.
 
 ---
 
 ## Troubleshooting
 
-- **Aplikace se otevře, ale nejde načíst `.md`**:
-  - ověř, že soubor fyzicky existuje a není zamčený jiným programem,
-  - pokud byl přesunut/smazán, otevři ho znovu tlačítkem **Otevřít .md**,
-  - vyzkoušej cestu bez speciálních omezení (např. `C:\Users\<ty>\Documents`).
-- **Po spuštění je prázdné okno / chyba inicializace**:
-  - spusť aktuální build z artifactu znovu, případně stáhni nový artifact,
-  - zkontroluj, že jsi rozbalil celý ZIP, ne jen samotné `.exe` vytržené z balíčku.
+- **Nejde otevřít `.md`**: aplikace teď ukáže i cestu k diagnostickému logu (`viewer.log`).
+- **Chyba knihovny**: renderer už není závislý na přímém načítání JS knihoven v okně; markdown parsing běží v main procesu.

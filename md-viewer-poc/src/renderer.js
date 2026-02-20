@@ -6,24 +6,6 @@ const emptyState = document.getElementById('emptyState');
 
 let currentPath = null;
 
-if (!window.marked || !window.hljs || !window.DOMPurify) {
-  alert('Chyba inicializace: chybí Markdown knihovny. Spusť prosím znovu aplikaci.');
-  throw new Error('Missing markdown libraries in renderer context.');
-}
-
-marked.setOptions({
-  gfm: true,
-  breaks: false,
-  headerIds: true,
-  mangle: false,
-  highlight(code, language) {
-    if (language && hljs.getLanguage(language)) {
-      return hljs.highlight(code, { language }).value;
-    }
-    return hljs.highlightAuto(code).value;
-  }
-});
-
 function showContent() {
   markdownHost.style.display = 'block';
   emptyState.style.display = 'none';
@@ -34,12 +16,17 @@ function showEmptyState() {
   emptyState.style.display = 'grid';
 }
 
-function renderMarkdown(rawMarkdown, fileName, directory) {
-  const html = marked.parse(rawMarkdown);
-  const sanitized = DOMPurify.sanitize(html, { USE_PROFILES: { html: true } });
-  markdownHost.innerHTML = sanitized;
+async function renderMarkdown(rawMarkdown, fileName, directory) {
+  const sanitizedHtml = await window.viewerApi.renderMarkdown(rawMarkdown);
+  markdownHost.innerHTML = sanitizedHtml;
   fileMeta.textContent = `${fileName} — ${directory}`;
   showContent();
+}
+
+function showDetailedError(error, operation) {
+  window.viewerApi.getLogPath().then((logPath) => {
+    alert(`${operation}: ${error.message}\n\nDiagnostika: ${logPath}`);
+  });
 }
 
 async function openFile() {
@@ -50,7 +37,7 @@ async function openFile() {
 
   currentPath = file.path;
   reloadButton.disabled = false;
-  renderMarkdown(file.content, file.fileName, file.directory);
+  await renderMarkdown(file.content, file.fileName, file.directory);
 }
 
 async function reloadCurrentFile() {
@@ -59,20 +46,20 @@ async function reloadCurrentFile() {
   }
 
   const file = await window.viewerApi.loadMarkdownFile(currentPath);
-  renderMarkdown(file.content, file.fileName, file.directory);
+  await renderMarkdown(file.content, file.fileName, file.directory);
 }
 
 openFileButton.addEventListener('click', () => {
   openFile().catch((error) => {
     console.error(error);
-    alert(`Nepodařilo se otevřít soubor: ${error.message}`);
+    showDetailedError(error, 'Nepodařilo se otevřít soubor');
   });
 });
 
 reloadButton.addEventListener('click', () => {
   reloadCurrentFile().catch((error) => {
     console.error(error);
-    alert(`Nepodařilo se načíst soubor: ${error.message}`);
+    showDetailedError(error, 'Nepodařilo se načíst soubor');
   });
 });
 
@@ -98,10 +85,10 @@ window.addEventListener('drop', async (event) => {
     const loaded = await window.viewerApi.loadMarkdownFile(file.path);
     currentPath = loaded.path;
     reloadButton.disabled = false;
-    renderMarkdown(loaded.content, loaded.fileName, loaded.directory);
+    await renderMarkdown(loaded.content, loaded.fileName, loaded.directory);
   } catch (error) {
     console.error(error);
-    alert(`Nepodařilo se načíst soubor: ${error.message}`);
+    showDetailedError(error, 'Nepodařilo se načíst soubor');
   }
 });
 
