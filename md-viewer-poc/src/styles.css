@@ -1,0 +1,72 @@
+:root {
+  color-scheme: light;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  font-family: Inter, Segoe UI, Roboto, Helvetica, Arial, sans-serif;
+  background: #f6f8fa;
+  color: #1f2328;
+  height: 100vh;
+  display: grid;
+  grid-template-rows: auto 1fr;
+}
+
+.toolbar {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.8rem 1rem;
+  background: #ffffff;
+  border-bottom: 1px solid #d1d9e0;
+}
+
+.toolbar button {
+  border: 1px solid #d1d9e0;
+  border-radius: 8px;
+  padding: 0.5rem 0.9rem;
+  background: #f6f8fa;
+  cursor: pointer;
+  font-weight: 600;
+}
+
+.toolbar button:hover:enabled {
+  background: #eef2f8;
+}
+
+.toolbar button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+#fileMeta {
+  color: #59636e;
+  font-size: 0.9rem;
+}
+
+.content {
+  height: 100%;
+  overflow: auto;
+}
+
+#markdownHost {
+  max-width: 960px;
+  margin: 2rem auto;
+  padding: 2rem;
+  background: #fff;
+  border: 1px solid #d1d9e0;
+  border-radius: 10px;
+}
+
+#emptyState {
+  min-height: 100%;
+  display: grid;
+  place-content: center;
+  text-align: center;
+  gap: 0.4rem;
+  color: #59636e;
+}
