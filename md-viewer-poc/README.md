@@ -36,6 +36,16 @@ Pokud chceš buildovat mimo GitHub Actions:
 1. Nainstaluj Node.js LTS (doporučeno 22+).
 2. V terminálu přejdi do `md-viewer-poc`.
 3. Spusť:
+## Rychlé spuštění (vývoj)
+
+```bash
+npm install
+npm run start
+```
+
+## Build portable `.exe` bez instalace
+
+Na Windows:
 
 ```bash
 npm install
@@ -56,6 +66,11 @@ npm run start
 ```
 
 ---
+Výstup bude v `release/`, typicky soubor jako:
+
+`MD Github Viewer-0.1.0-portable.exe`
+
+Ten můžeš přenést na jiný Windows počítač a spouštět bez instalačního wizardu.
 
 ## Poznámky k POC
 
