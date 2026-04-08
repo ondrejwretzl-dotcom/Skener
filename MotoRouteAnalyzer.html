@@ -1,0 +1,1046 @@
+<!DOCTYPE html>
+<html lang="cs">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Analyzátor tras GPX v2</title>
+  <style>
+    :root {
+      --bg: #f4f7fb;
+      --card: #ffffff;
+      --text: #17212b;
+      --muted: #64748b;
+      --line: #dbe3ee;
+      --primary: #0f766e;
+      --primary-2: #14b8a6;
+      --danger: #b91c1c;
+      --danger-bg: #fee2e2;
+      --warn: #92400e;
+      --warn-bg: #fef3c7;
+      --ok: #166534;
+      --ok-bg: #dcfce7;
+      --shadow: 0 10px 30px rgba(15, 23, 42, 0.08);
+      --radius: 18px;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      font-family: Inter, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      color: var(--text);
+      background:
+        radial-gradient(circle at top right, rgba(20, 184, 166, 0.12), transparent 24%),
+        linear-gradient(180deg, #f8fbff 0%, var(--bg) 100%);
+    }
+
+    .page {
+      width: min(1180px, calc(100% - 24px));
+      margin: 0 auto;
+      padding: 16px 0 36px;
+    }
+
+    .hero {
+      display: grid;
+      gap: 12px;
+      margin: 8px 0 18px;
+    }
+
+    .title {
+      margin: 0;
+      font-size: clamp(1.5rem, 4vw, 2.4rem);
+      line-height: 1.1;
+      letter-spacing: -0.03em;
+    }
+
+    .subtitle {
+      margin: 0;
+      color: var(--muted);
+      font-size: 0.98rem;
+      line-height: 1.5;
+      max-width: 72ch;
+    }
+
+    .layout {
+      display: grid;
+      gap: 16px;
+      grid-template-columns: 1fr;
+    }
+
+    .card {
+      background: var(--card);
+      border: 1px solid rgba(219, 227, 238, 0.9);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+      padding: 16px;
+    }
+
+    .card h2 {
+      margin: 0 0 8px;
+      font-size: 1.05rem;
+    }
+
+    .card h3 {
+      margin: 0;
+      font-size: 0.96rem;
+    }
+
+    .dropzone {
+      border: 2px dashed #9dd7d1;
+      background: linear-gradient(180deg, rgba(20, 184, 166, 0.06), rgba(20, 184, 166, 0.025));
+      border-radius: 16px;
+      padding: 18px;
+      display: grid;
+      gap: 12px;
+      text-align: center;
+      transition: 0.18s ease;
+      cursor: pointer;
+    }
+
+    .dropzone.dragover {
+      border-color: var(--primary);
+      background: linear-gradient(180deg, rgba(20, 184, 166, 0.12), rgba(20, 184, 166, 0.05));
+      transform: translateY(-1px);
+    }
+
+    .dropzone strong {
+      font-size: 1rem;
+    }
+
+    .dropzone span {
+      color: var(--muted);
+      font-size: 0.92rem;
+      line-height: 1.45;
+    }
+
+    .actions {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: center;
+      gap: 10px;
+    }
+
+    .btn {
+      appearance: none;
+      border: 0;
+      border-radius: 999px;
+      padding: 11px 16px;
+      font: inherit;
+      font-weight: 700;
+      cursor: pointer;
+      transition: 0.16s ease;
+    }
+
+    .btn-primary {
+      background: linear-gradient(180deg, var(--primary-2), var(--primary));
+      color: white;
+      box-shadow: 0 8px 20px rgba(15, 118, 110, 0.24);
+    }
+
+    .btn-primary:hover { transform: translateY(-1px); }
+
+    .btn-ghost {
+      background: #eef5f8;
+      color: var(--text);
+      border: 1px solid var(--line);
+    }
+
+    .info-grid {
+      display: grid;
+      grid-template-columns: repeat(1, minmax(0, 1fr));
+      gap: 10px;
+      margin-top: 14px;
+    }
+
+    .chip {
+      border-radius: 14px;
+      padding: 12px 14px;
+      border: 1px solid var(--line);
+      background: #fbfdff;
+    }
+
+    .chip small {
+      display: block;
+      color: var(--muted);
+      margin-bottom: 4px;
+      font-size: 0.8rem;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }
+
+    .message-stack {
+      display: grid;
+      gap: 10px;
+      margin-top: 14px;
+    }
+
+    .message {
+      border-radius: 14px;
+      padding: 12px 14px;
+      font-size: 0.93rem;
+      line-height: 1.45;
+      border: 1px solid transparent;
+    }
+
+    .message-error {
+      color: var(--danger);
+      background: var(--danger-bg);
+      border-color: #fecaca;
+    }
+
+    .message-warn {
+      color: var(--warn);
+      background: var(--warn-bg);
+      border-color: #fde68a;
+    }
+
+    .message-ok {
+      color: var(--ok);
+      background: var(--ok-bg);
+      border-color: #bbf7d0;
+    }
+
+    .status-list {
+      display: grid;
+      gap: 10px;
+      margin-top: 14px;
+    }
+
+    .status-item {
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      padding: 12px 14px;
+      background: #fafcff;
+      display: grid;
+      gap: 4px;
+    }
+
+    .status-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .status-name {
+      font-weight: 700;
+      overflow-wrap: anywhere;
+    }
+
+    .status-badge {
+      white-space: nowrap;
+      border-radius: 999px;
+      padding: 5px 9px;
+      font-size: 0.76rem;
+      font-weight: 700;
+      background: #e2e8f0;
+      color: #334155;
+    }
+
+    .status-badge.processing { background: #dbeafe; color: #1d4ed8; }
+    .status-badge.ready { background: #dcfce7; color: #166534; }
+    .status-badge.error { background: #fee2e2; color: #b91c1c; }
+
+    .status-meta {
+      color: var(--muted);
+      font-size: 0.88rem;
+      line-height: 1.4;
+    }
+
+    .table-wrap {
+      overflow: auto;
+      border: 1px solid var(--line);
+      border-radius: 16px;
+      background: white;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      min-width: 760px;
+    }
+
+    th, td {
+      padding: 12px 12px;
+      border-bottom: 1px solid #e8eef5;
+      vertical-align: top;
+      text-align: left;
+      font-size: 0.93rem;
+    }
+
+    thead th {
+      background: #f5fbfb;
+      position: sticky;
+      top: 0;
+      z-index: 1;
+    }
+
+    tbody tr.section-row td {
+      background: #f8fafc;
+      font-weight: 800;
+      color: #0f172a;
+    }
+
+    tbody tr:last-child td { border-bottom: 0; }
+
+    .metric-label {
+      min-width: 240px;
+      font-weight: 700;
+    }
+
+    .metric-sub {
+      display: block;
+      color: var(--muted);
+      font-weight: 400;
+      font-size: 0.82rem;
+      margin-top: 2px;
+      line-height: 1.35;
+    }
+
+    .num {
+      white-space: nowrap;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .footnote {
+      color: var(--muted);
+      font-size: 0.84rem;
+      line-height: 1.5;
+      margin-top: 12px;
+    }
+
+    .hidden { display: none !important; }
+
+    @media (min-width: 860px) {
+      .layout {
+        grid-template-columns: 360px minmax(0, 1fr);
+        align-items: start;
+      }
+      .info-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="page">
+    <section class="hero">
+      <h1 class="title">Analyzátor tras GPX v2</h1>
+      <p class="subtitle">Nahraj více GPX exportů z Mapy.com. Stránka ověří vstup, načte trasu, dohledá okolní silnice a zastavěné plochy přes Overpass API a spočítá kilometry i procenta pro sídla / mimo sídla a pro jednotlivé třídy silnic.</p>
+    </section>
+
+    <section class="layout">
+      <div class="card">
+        <h2>Vstup</h2>
+        <div id="dropzone" class="dropzone" role="button" tabindex="0" aria-label="Nahrát GPX soubory">
+          <strong>Přetáhni GPX soubory sem</strong>
+          <span>nebo klikni pro výběr. Pro správnou analýzu použij export z Mapy.com jako GPX se skutečným trackem, ne jen autonavigační route body.</span>
+          <div class="actions">
+            <button class="btn btn-primary" type="button" id="pickBtn">Vybrat GPX</button>
+            <button class="btn btn-ghost" type="button" id="clearBtn">Vymazat vše</button>
+          </div>
+          <input id="fileInput" type="file" accept=".gpx,application/gpx+xml,application/xml,text/xml" multiple class="hidden" />
+        </div>
+
+        <div class="info-grid">
+          <div class="chip">
+            <small>API</small>
+            Overpass API
+          </div>
+          <div class="chip">
+            <small>Režim</small>
+            Klientsky v prohlížeči
+          </div>
+          <div class="chip">
+            <small>Dělení sídla</small>
+            Zastavěné plochy + městské silnice
+          </div>
+          <div class="chip">
+            <small>Dělení silnic</small>
+            highway=* z OSM
+          </div>
+        </div>
+
+        <div class="message-stack" id="messages"></div>
+        <div class="status-list" id="statusList"></div>
+      </div>
+
+      <div class="card">
+        <h2>Výsledky</h2>
+        <div id="tablePlaceholder" class="message message-warn">Zatím nejsou načtené žádné validní GPX soubory.</div>
+        <div id="tableWrap" class="table-wrap hidden"></div>
+        <p class="footnote">Poznámka: výpočet je výrazně přesnější než čistá heuristika, ale stále je omezený tím, co je v OpenStreetMap v dané oblasti opravdu zmapované. U sídel je použita pragmatická definice: úsek je veden jako „přes sídlo“, pokud leží v zastavěné ploše nebo je přiřazený k typicky městské silnici.</p>
+        <p class="footnote">Mapová data © OpenStreetMap contributors.</p>
+      </div>
+    </section>
+  </div>
+
+  <script>
+    const OVERPASS_ENDPOINT = 'https://overpass-api.de/api/interpreter';
+    const MAX_FILE_SIZE_MB = 12;
+    const HIGHWAY_REGEX = '^(motorway|motorway_link|trunk|trunk_link|primary|primary_link|secondary|secondary_link|tertiary|tertiary_link|unclassified|residential|service|living_street|road|track)$';
+    const SETTLEMENT_LANDUSE_REGEX = '^(residential|commercial|industrial|retail|garages)$';
+    const PLACE_REGEX = '^(city|town|village|suburb|neighbourhood|quarter|hamlet)$';
+    const ROAD_MATCH_THRESHOLD_METERS = 90;
+
+    const state = {
+      files: [],
+      messages: []
+    };
+
+    const fileInput = document.getElementById('fileInput');
+    const pickBtn = document.getElementById('pickBtn');
+    const clearBtn = document.getElementById('clearBtn');
+    const dropzone = document.getElementById('dropzone');
+    const messagesEl = document.getElementById('messages');
+    const statusListEl = document.getElementById('statusList');
+    const tableWrapEl = document.getElementById('tableWrap');
+    const tablePlaceholderEl = document.getElementById('tablePlaceholder');
+
+    pickBtn.addEventListener('click', () => fileInput.click());
+    fileInput.addEventListener('change', (e) => handleFiles(e.target.files));
+    clearBtn.addEventListener('click', clearAll);
+
+    dropzone.addEventListener('click', (e) => {
+      if (e.target === pickBtn || e.target === clearBtn) return;
+      fileInput.click();
+    });
+
+    dropzone.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' || e.key === ' ') {
+        e.preventDefault();
+        fileInput.click();
+      }
+    });
+
+    dropzone.addEventListener('dragover', (e) => {
+      e.preventDefault();
+      dropzone.classList.add('dragover');
+    });
+
+    dropzone.addEventListener('dragleave', () => dropzone.classList.remove('dragover'));
+
+    dropzone.addEventListener('drop', (e) => {
+      e.preventDefault();
+      dropzone.classList.remove('dragover');
+      handleFiles(e.dataTransfer.files);
+    });
+
+    function clearAll() {
+      state.files = [];
+      state.messages = [];
+      fileInput.value = '';
+      renderMessages();
+      renderStatuses();
+      renderTable();
+    }
+
+    function addMessage(type, text) {
+      state.messages.push({ type, text });
+      renderMessages();
+    }
+
+    function setMessages(messages) {
+      state.messages = messages;
+      renderMessages();
+    }
+
+    function renderMessages() {
+      messagesEl.innerHTML = '';
+      state.messages.forEach((message) => {
+        const el = document.createElement('div');
+        el.className = `message message-${message.type}`;
+        el.textContent = message.text;
+        messagesEl.appendChild(el);
+      });
+    }
+
+    function renderStatuses() {
+      statusListEl.innerHTML = '';
+      state.files.forEach((fileEntry) => {
+        const item = document.createElement('div');
+        item.className = 'status-item';
+        const label = fileEntry.status === 'ready' ? 'Hotovo' : fileEntry.status === 'processing' ? 'Zpracování' : 'Chyba';
+        item.innerHTML = `
+          <div class="status-head">
+            <div class="status-name">${escapeHtml(fileEntry.name)}</div>
+            <div class="status-badge ${fileEntry.status}">${label}</div>
+          </div>
+          <div class="status-meta">${escapeHtml(fileEntry.meta || '')}</div>
+        `;
+        statusListEl.appendChild(item);
+      });
+    }
+
+    async function handleFiles(fileList) {
+      const files = Array.from(fileList || []);
+      if (!files.length) return;
+
+      const newMessages = [];
+      for (const file of files) {
+        const duplicate = state.files.some((x) => x.name === file.name && x.size === file.size);
+        if (duplicate) {
+          newMessages.push({ type: 'warn', text: `Soubor ${file.name} už je ve frontě. Přeskočeno.` });
+          continue;
+        }
+
+        const entry = {
+          id: `${file.name}-${file.size}-${cryptoRandomString()}`,
+          name: file.name,
+          size: file.size,
+          status: 'processing',
+          meta: 'Čtu soubor…',
+          result: null
+        };
+        state.files.push(entry);
+        renderStatuses();
+        renderTable();
+
+        try {
+          const text = await readFileAsText(file);
+          const coords = parseGpx(text);
+          entry.meta = `Načteno ${coords.length.toLocaleString('cs-CZ')} bodů. Připravuji analýzu…`;
+          renderStatuses();
+          entry.result = await analyzeTrack(coords, file.name, (meta) => {
+            entry.meta = meta;
+            renderStatuses();
+          });
+          entry.status = 'ready';
+          entry.meta = `Hotovo. ${formatKm(entry.result.totalKm)} · sídla ${formatKm(entry.result.urbanKm)} · mimo ${formatKm(entry.result.ruralKm)}`;
+        } catch (error) {
+          entry.status = 'error';
+          entry.meta = normalizeError(error);
+        }
+
+        renderStatuses();
+        renderTable();
+      }
+
+      if (newMessages.length) {
+        setMessages([...state.messages, ...newMessages]);
+      }
+
+      if (state.files.some((x) => x.status === 'ready') && !state.messages.some((m) => m.type === 'ok')) {
+        addMessage('ok', 'Analýza používá pouze veřejný Overpass API dotaz nad OpenStreetMap daty. U velmi dlouhých tras může zpracování chvíli trvat.');
+      }
+    }
+
+    function readFileAsText(file) {
+      return new Promise((resolve, reject) => {
+        if (!/\.gpx$/i.test(file.name)) {
+          reject(new Error(`Soubor ${file.name} není GPX.`));
+          return;
+        }
+        if (file.size > MAX_FILE_SIZE_MB * 1024 * 1024) {
+          reject(new Error(`Soubor ${file.name} je příliš velký. Limit je ${MAX_FILE_SIZE_MB} MB.`));
+          return;
+        }
+        const reader = new FileReader();
+        reader.onerror = () => reject(new Error(`Soubor ${file.name} se nepodařilo přečíst.`));
+        reader.onload = () => resolve(String(reader.result || ''));
+        reader.readAsText(file);
+      });
+    }
+
+    function parseGpx(xmlText) {
+      const parser = new DOMParser();
+      const xml = parser.parseFromString(xmlText, 'application/xml');
+      const parseError = xml.querySelector('parsererror');
+      if (parseError) {
+        throw new Error('GPX má neplatnou XML strukturu.');
+      }
+
+      const trkpts = Array.from(xml.getElementsByTagName('trkpt'));
+      if (trkpts.length < 2) {
+        const rtepts = xml.getElementsByTagName('rtept').length;
+        if (rtepts > 0) {
+          throw new Error('Soubor obsahuje jen route body bez plného tracku. V Mapy.com exportuj GPX bez volby pro autonavigaci.');
+        }
+        throw new Error('Soubor neobsahuje použitelný track.');
+      }
+
+      const coords = trkpts.map((p, idx) => {
+        const lat = Number.parseFloat(p.getAttribute('lat'));
+        const lon = Number.parseFloat(p.getAttribute('lon'));
+        if (!Number.isFinite(lat) || !Number.isFinite(lon)) {
+          throw new Error(`Track bod ${idx + 1} má neplatné souřadnice.`);
+        }
+        return { lat, lon };
+      });
+
+      const deduped = [coords[0]];
+      for (let i = 1; i < coords.length; i++) {
+        const prev = deduped[deduped.length - 1];
+        if (prev.lat !== coords[i].lat || prev.lon !== coords[i].lon) {
+          deduped.push(coords[i]);
+        }
+      }
+
+      if (deduped.length < 2) {
+        throw new Error('Track má po odstranění duplicit méně než 2 body.');
+      }
+
+      return deduped;
+    }
+
+    async function analyzeTrack(coords, fileName, onProgress) {
+      onProgress('Počítám segmenty trasy…');
+      const segments = buildSegments(coords);
+      const totalKm = segments.reduce((sum, s) => sum + s.lengthKm, 0);
+      if (totalKm <= 0.02) {
+        throw new Error('Trasa je příliš krátká na smysluplnou analýzu.');
+      }
+
+      onProgress('Připravuji koridor pro Overpass dotazy…');
+      const bboxes = buildCorridorBboxes(coords);
+      const fetched = await fetchOverpassData(bboxes, onProgress, fileName);
+      const roads = fetched.roads;
+      const polygons = fetched.polygons;
+
+      if (!roads.length) {
+        throw new Error('V okolí trasy se nepodařilo načíst žádné silnice z Overpass API.');
+      }
+
+      onProgress('Přiřazuji segmentům silnice a sídla…');
+      const roadTotalsKm = new Map();
+      let urbanKm = 0;
+      let ruralKm = 0;
+      let unknownRoadKm = 0;
+
+      for (const segment of segments) {
+        const matchedRoad = findNearestRoad(segment.midpoint, roads);
+        const roadClass = normalizeHighwayClass(matchedRoad?.tags?.highway);
+        if (!matchedRoad || matchedRoad.distanceMeters > ROAD_MATCH_THRESHOLD_METERS) {
+          incrementMap(roadTotalsKm, 'Neurčeno', segment.lengthKm);
+          unknownRoadKm += segment.lengthKm;
+        } else {
+          incrementMap(roadTotalsKm, roadClass.label, segment.lengthKm);
+        }
+
+        const inBuiltUpArea = polygons.some((polygon) => pointInPolygon(segment.midpoint, polygon));
+        const urbanByRoad = isUrbanRoad(matchedRoad?.tags, roadClass.key);
+        const isUrban = inBuiltUpArea || urbanByRoad;
+
+        if (isUrban) {
+          urbanKm += segment.lengthKm;
+        } else {
+          ruralKm += segment.lengthKm;
+        }
+      }
+
+      const roadRows = ROAD_CLASS_ORDER.map((roadClassKey) => {
+        const label = ROAD_CLASS_LABELS[roadClassKey];
+        const km = roadTotalsKm.get(label) || 0;
+        return { key: roadClassKey, label, km, pct: totalKm > 0 ? (km / totalKm) * 100 : 0 };
+      }).filter((row) => row.km > 0.001);
+
+      if (unknownRoadKm > 0.001 && !roadRows.some((row) => row.label === 'Neurčeno')) {
+        roadRows.push({ key: 'unknown', label: 'Neurčeno', km: unknownRoadKm, pct: totalKm > 0 ? (unknownRoadKm / totalKm) * 100 : 0 });
+      }
+
+      roadRows.sort((a, b) => b.km - a.km);
+
+      return {
+        fileName,
+        pointCount: coords.length,
+        segmentCount: segments.length,
+        totalKm,
+        urbanKm,
+        ruralKm,
+        urbanPct: totalKm > 0 ? (urbanKm / totalKm) * 100 : 0,
+        ruralPct: totalKm > 0 ? (ruralKm / totalKm) * 100 : 0,
+        roadRows,
+        debug: {
+          fetchedRoadCount: roads.length,
+          fetchedPolygonCount: polygons.length,
+          fetchedBboxes: bboxes.length
+        }
+      };
+    }
+
+    function buildSegments(coords) {
+      const segments = [];
+      for (let i = 1; i < coords.length; i++) {
+        const a = coords[i - 1];
+        const b = coords[i];
+        const lengthKm = haversineKm(a, b);
+        if (lengthKm <= 0) continue;
+        segments.push({
+          a,
+          b,
+          lengthKm,
+          midpoint: { lat: (a.lat + b.lat) / 2, lon: (a.lon + b.lon) / 2 }
+        });
+      }
+      return segments;
+    }
+
+    function buildCorridorBboxes(coords) {
+      const chunkDistanceKm = 18;
+      const padDeg = 0.007;
+      const boxes = [];
+
+      let startIndex = 0;
+      let accumulated = 0;
+      for (let i = 1; i < coords.length; i++) {
+        accumulated += haversineKm(coords[i - 1], coords[i]);
+        const isLast = i === coords.length - 1;
+        if (accumulated >= chunkDistanceKm || isLast) {
+          const slice = coords.slice(startIndex, i + 1);
+          boxes.push(expandedBBox(slice, padDeg));
+          startIndex = i;
+          accumulated = 0;
+        }
+      }
+
+      if (!boxes.length) {
+        boxes.push(expandedBBox(coords, padDeg));
+      }
+
+      return mergeBBoxes(boxes);
+    }
+
+    function expandedBBox(points, padDeg) {
+      let minLat = Infinity, maxLat = -Infinity, minLon = Infinity, maxLon = -Infinity;
+      points.forEach((p) => {
+        if (p.lat < minLat) minLat = p.lat;
+        if (p.lat > maxLat) maxLat = p.lat;
+        if (p.lon < minLon) minLon = p.lon;
+        if (p.lon > maxLon) maxLon = p.lon;
+      });
+      return {
+        south: minLat - padDeg,
+        west: minLon - padDeg,
+        north: maxLat + padDeg,
+        east: maxLon + padDeg
+      };
+    }
+
+    function mergeBBoxes(boxes) {
+      const merged = [];
+      for (const box of boxes) {
+        let mergedIntoExisting = false;
+        for (const existing of merged) {
+          if (boxesTouchOrOverlap(existing, box)) {
+            existing.south = Math.min(existing.south, box.south);
+            existing.west = Math.min(existing.west, box.west);
+            existing.north = Math.max(existing.north, box.north);
+            existing.east = Math.max(existing.east, box.east);
+            mergedIntoExisting = true;
+            break;
+          }
+        }
+        if (!mergedIntoExisting) merged.push({ ...box });
+      }
+      return merged;
+    }
+
+    function boxesTouchOrOverlap(a, b) {
+      const gap = 0.004;
+      return !(
+        a.east + gap < b.west ||
+        b.east + gap < a.west ||
+        a.north + gap < b.south ||
+        b.north + gap < a.south
+      );
+    }
+
+    async function fetchOverpassData(bboxes, onProgress, fileName) {
+      const roadsById = new Map();
+      const polygonsById = new Map();
+
+      for (let i = 0; i < bboxes.length; i++) {
+        const bbox = bboxes[i];
+        onProgress(`Načítám mapová data ${i + 1}/${bboxes.length}…`);
+        const query = buildOverpassQuery(bbox);
+        const response = await fetch(OVERPASS_ENDPOINT, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8' },
+          body: new URLSearchParams({ data: query })
+        });
+
+        if (!response.ok) {
+          throw new Error(`Overpass API vrátilo chybu ${response.status}. Zkus to prosím za chvíli znovu.`);
+        }
+
+        const data = await response.json();
+        if (!data || !Array.isArray(data.elements)) {
+          throw new Error('Overpass API vrátilo nečitelná data.');
+        }
+
+        for (const element of data.elements) {
+          if (element.type !== 'way' || !Array.isArray(element.geometry) || element.geometry.length < 2) continue;
+          const key = `${element.type}-${element.id}`;
+          const tags = element.tags || {};
+
+          if (tags.highway) {
+            roadsById.set(key, {
+              id: key,
+              tags,
+              geometry: element.geometry.map((g) => ({ lat: g.lat, lon: g.lon })),
+              bbox: lineBBox(element.geometry)
+            });
+          }
+
+          const isPolygonCandidate = isClosedWay(element.geometry) && (tags.landuse || tags.place);
+          if (isPolygonCandidate) {
+            polygonsById.set(key, element.geometry.map((g) => ({ lat: g.lat, lon: g.lon })));
+          }
+        }
+      }
+
+      return {
+        roads: Array.from(roadsById.values()),
+        polygons: Array.from(polygonsById.values())
+      };
+    }
+
+    function buildOverpassQuery(bbox) {
+      const s = bbox.south.toFixed(6);
+      const w = bbox.west.toFixed(6);
+      const n = bbox.north.toFixed(6);
+      const e = bbox.east.toFixed(6);
+      return `
+        [out:json][timeout:25];
+        (
+          way["highway"~"${HIGHWAY_REGEX}"]["area"!="yes"](${s},${w},${n},${e});
+          way["landuse"~"${SETTLEMENT_LANDUSE_REGEX}"](${s},${w},${n},${e});
+          way["place"~"${PLACE_REGEX}"](${s},${w},${n},${e});
+        );
+        out tags geom;
+      `;
+    }
+
+    function lineBBox(geometry) {
+      let minLat = Infinity, maxLat = -Infinity, minLon = Infinity, maxLon = -Infinity;
+      geometry.forEach((p) => {
+        if (p.lat < minLat) minLat = p.lat;
+        if (p.lat > maxLat) maxLat = p.lat;
+        if (p.lon < minLon) minLon = p.lon;
+        if (p.lon > maxLon) maxLon = p.lon;
+      });
+      return { minLat, maxLat, minLon, maxLon };
+    }
+
+    function isClosedWay(geometry) {
+      const first = geometry[0];
+      const last = geometry[geometry.length - 1];
+      return Math.abs(first.lat - last.lat) < 1e-9 && Math.abs(first.lon - last.lon) < 1e-9;
+    }
+
+    function findNearestRoad(point, roads) {
+      let best = null;
+      for (const road of roads) {
+        if (!pointNearBBox(point, road.bbox, 0.002)) continue;
+        const distanceMeters = distancePointToPolylineMeters(point, road.geometry);
+        if (best === null || distanceMeters < best.distanceMeters) {
+          best = { tags: road.tags, distanceMeters };
+        }
+      }
+      return best;
+    }
+
+    function pointNearBBox(point, bbox, padDeg) {
+      return point.lat >= bbox.minLat - padDeg && point.lat <= bbox.maxLat + padDeg && point.lon >= bbox.minLon - padDeg && point.lon <= bbox.maxLon + padDeg;
+    }
+
+    function distancePointToPolylineMeters(point, geometry) {
+      let best = Infinity;
+      for (let i = 1; i < geometry.length; i++) {
+        const d = distancePointToSegmentMeters(point, geometry[i - 1], geometry[i]);
+        if (d < best) best = d;
+      }
+      return best;
+    }
+
+    function distancePointToSegmentMeters(p, a, b) {
+      const refLat = (a.lat + b.lat + p.lat) / 3;
+      const ax = lonToMeters(a.lon, refLat), ay = latToMeters(a.lat);
+      const bx = lonToMeters(b.lon, refLat), by = latToMeters(b.lat);
+      const px = lonToMeters(p.lon, refLat), py = latToMeters(p.lat);
+
+      const abx = bx - ax, aby = by - ay;
+      const apx = px - ax, apy = py - ay;
+      const ab2 = abx * abx + aby * aby;
+      if (ab2 === 0) return Math.hypot(px - ax, py - ay);
+
+      let t = (apx * abx + apy * aby) / ab2;
+      t = Math.max(0, Math.min(1, t));
+      const cx = ax + t * abx;
+      const cy = ay + t * aby;
+      return Math.hypot(px - cx, py - cy);
+    }
+
+    function latToMeters(lat) {
+      return lat * 111320;
+    }
+
+    function lonToMeters(lon, refLat) {
+      return lon * 111320 * Math.cos(refLat * Math.PI / 180);
+    }
+
+    function pointInPolygon(point, polygon) {
+      let inside = false;
+      for (let i = 0, j = polygon.length - 1; i < polygon.length; j = i++) {
+        const xi = polygon[i].lon, yi = polygon[i].lat;
+        const xj = polygon[j].lon, yj = polygon[j].lat;
+        const intersect = ((yi > point.lat) !== (yj > point.lat)) &&
+          (point.lon < (xj - xi) * (point.lat - yi) / ((yj - yi) || 1e-12) + xi);
+        if (intersect) inside = !inside;
+      }
+      return inside;
+    }
+
+    function isUrbanRoad(tags = {}, classKey) {
+      const urbanClasses = new Set(['residential', 'service', 'living_street']);
+      if (urbanClasses.has(classKey)) return true;
+
+      const maxspeed = parseMaxspeed(tags.maxspeed || tags['source:maxspeed'] || '');
+      if (Number.isFinite(maxspeed) && maxspeed <= 60) return true;
+
+      return false;
+    }
+
+    function parseMaxspeed(value) {
+      if (!value) return NaN;
+      const match = String(value).match(/(\d{1,3})/);
+      return match ? Number.parseFloat(match[1]) : NaN;
+    }
+
+    const ROAD_CLASS_LABELS = {
+      motorway: 'Dálnice / motorway',
+      trunk: 'Silnice pro motorová vozidla / trunk',
+      primary: 'Primary',
+      secondary: 'Secondary',
+      tertiary: 'Tertiary',
+      unclassified: 'Unclassified',
+      residential: 'Residential',
+      service: 'Service',
+      living_street: 'Living street',
+      road: 'Road',
+      track: 'Track',
+      unknown: 'Neurčeno'
+    };
+
+    const ROAD_CLASS_ORDER = ['motorway', 'trunk', 'primary', 'secondary', 'tertiary', 'unclassified', 'residential', 'service', 'living_street', 'road', 'track'];
+
+    function normalizeHighwayClass(highwayValue) {
+      const value = String(highwayValue || '').trim();
+      if (value.startsWith('motorway')) return { key: 'motorway', label: ROAD_CLASS_LABELS.motorway };
+      if (value.startsWith('trunk')) return { key: 'trunk', label: ROAD_CLASS_LABELS.trunk };
+      if (value.startsWith('primary')) return { key: 'primary', label: ROAD_CLASS_LABELS.primary };
+      if (value.startsWith('secondary')) return { key: 'secondary', label: ROAD_CLASS_LABELS.secondary };
+      if (value.startsWith('tertiary')) return { key: 'tertiary', label: ROAD_CLASS_LABELS.tertiary };
+      if (value === 'unclassified') return { key: 'unclassified', label: ROAD_CLASS_LABELS.unclassified };
+      if (value === 'residential') return { key: 'residential', label: ROAD_CLASS_LABELS.residential };
+      if (value === 'service') return { key: 'service', label: ROAD_CLASS_LABELS.service };
+      if (value === 'living_street') return { key: 'living_street', label: ROAD_CLASS_LABELS.living_street };
+      if (value === 'road') return { key: 'road', label: ROAD_CLASS_LABELS.road };
+      if (value === 'track') return { key: 'track', label: ROAD_CLASS_LABELS.track };
+      return { key: 'unknown', label: ROAD_CLASS_LABELS.unknown };
+    }
+
+    function incrementMap(map, key, value) {
+      map.set(key, (map.get(key) || 0) + value);
+    }
+
+    function renderTable() {
+      const readyResults = state.files.filter((x) => x.status === 'ready' && x.result).map((x) => x.result);
+      if (!readyResults.length) {
+        tableWrapEl.classList.add('hidden');
+        tablePlaceholderEl.classList.remove('hidden');
+        return;
+      }
+
+      tablePlaceholderEl.classList.add('hidden');
+      tableWrapEl.classList.remove('hidden');
+
+      const roadLabels = Array.from(new Set(readyResults.flatMap((r) => r.roadRows.map((row) => row.label))));
+      const roadOrder = ROAD_CLASS_ORDER.map((key) => ROAD_CLASS_LABELS[key]).concat(['Neurčeno']);
+      roadLabels.sort((a, b) => roadOrder.indexOf(a) - roadOrder.indexOf(b));
+
+      const rows = [
+        { section: 'Souhrn', label: 'Celková délka', sub: 'Součet všech segmentů tracku', formatter: (r) => formatKm(r.totalKm) },
+        { section: 'Sídelnost', label: 'Přes sídla', sub: 'Zastavěná plocha nebo typicky městská silnice', formatter: (r) => `${formatKm(r.urbanKm)} · ${formatPct(r.urbanPct)}` },
+        { section: 'Sídelnost', label: 'Mimo sídla', sub: 'Mimo zastavěné plochy', formatter: (r) => `${formatKm(r.ruralKm)} · ${formatPct(r.ruralPct)}` },
+        { section: 'Technické', label: 'Track body', sub: 'Počet bodů v GPX', formatter: (r) => r.pointCount.toLocaleString('cs-CZ') },
+        { section: 'Technické', label: 'Segmenty', sub: 'Počet analyzovaných úseků', formatter: (r) => r.segmentCount.toLocaleString('cs-CZ') },
+        { section: 'Technické', label: 'Načtené silnice', sub: 'Počet OSM way segmentů z Overpass', formatter: (r) => r.debug.fetchedRoadCount.toLocaleString('cs-CZ') },
+        { section: 'Technické', label: 'Načtené plochy sídel', sub: 'Počet polygonů landuse/place', formatter: (r) => r.debug.fetchedPolygonCount.toLocaleString('cs-CZ') }
+      ];
+
+      const sections = new Map();
+      rows.forEach((row) => {
+        if (!sections.has(row.section)) sections.set(row.section, []);
+        sections.get(row.section).push(row);
+      });
+
+      if (roadLabels.length) {
+        sections.set('Třídy silnic', roadLabels.map((label) => ({
+          section: 'Třídy silnic',
+          label,
+          sub: 'Kilometry a procenta na této třídě',
+          formatter: (r) => {
+            const found = r.roadRows.find((row) => row.label === label);
+            return found ? `${formatKm(found.km)} · ${formatPct(found.pct)}` : '0,0 km · 0,0 %';
+          }
+        })));
+      }
+
+      const headers = readyResults.map((r) => r.fileName);
+      let html = '<table><thead><tr><th class="metric-label">Metrika</th>';
+      headers.forEach((header) => { html += `<th>${escapeHtml(header)}</th>`; });
+      html += '</tr></thead><tbody>';
+
+      for (const [sectionName, sectionRows] of sections.entries()) {
+        html += `<tr class="section-row"><td colspan="${headers.length + 1}">${escapeHtml(sectionName)}</td></tr>`;
+        sectionRows.forEach((row) => {
+          html += `<tr><td class="metric-label">${escapeHtml(row.label)}<span class="metric-sub">${escapeHtml(row.sub)}</span></td>`;
+          readyResults.forEach((result) => {
+            html += `<td class="num">${escapeHtml(row.formatter(result))}</td>`;
+          });
+          html += '</tr>';
+        });
+      }
+
+      html += '</tbody></table>';
+      tableWrapEl.innerHTML = html;
+    }
+
+    function haversineKm(a, b) {
+      const R = 6371;
+      const dLat = toRad(b.lat - a.lat);
+      const dLon = toRad(b.lon - a.lon);
+      const lat1 = toRad(a.lat);
+      const lat2 = toRad(b.lat);
+      const x = Math.sin(dLat / 2) ** 2 + Math.sin(dLon / 2) ** 2 * Math.cos(lat1) * Math.cos(lat2);
+      return 2 * R * Math.atan2(Math.sqrt(x), Math.sqrt(1 - x));
+    }
+
+    function toRad(v) { return v * Math.PI / 180; }
+    function formatKm(v) { return `${v.toLocaleString('cs-CZ', { minimumFractionDigits: 1, maximumFractionDigits: 1 })} km`; }
+    function formatPct(v) { return `${v.toLocaleString('cs-CZ', { minimumFractionDigits: 1, maximumFractionDigits: 1 })} %`; }
+
+    function normalizeError(error) {
+      if (error instanceof Error) return error.message;
+      return String(error || 'Neznámá chyba.');
+    }
+
+    function escapeHtml(value) {
+      return String(value)
+        .replaceAll('&', '&amp;')
+        .replaceAll('<', '&lt;')
+        .replaceAll('>', '&gt;')
+        .replaceAll('"', '&quot;')
+        .replaceAll("'", '&#039;');
+    }
+
+    function cryptoRandomString() {
+      const arr = new Uint32Array(2);
+      crypto.getRandomValues(arr);
+      return Array.from(arr).map((x) => x.toString(36)).join('');
+    }
+  </script>
+</body>
+</html>
+
