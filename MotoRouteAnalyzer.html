@@ -3,7 +3,13 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Analyzátor tras GPX v2</title>
+  <title>Analyzátor tras GPX v3</title>
+  <link
+    rel="stylesheet"
+    href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+    integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY="
+    crossorigin=""
+  />
   <style>
     :root {
       --bg: #f4f7fb;
@@ -80,11 +86,6 @@
       font-size: 1.05rem;
     }
 
-    .card h3 {
-      margin: 0;
-      font-size: 0.96rem;
-    }
-
     .dropzone {
       border: 2px dashed #9dd7d1;
       background: linear-gradient(180deg, rgba(20, 184, 166, 0.06), rgba(20, 184, 166, 0.025));
@@ -103,9 +104,7 @@
       transform: translateY(-1px);
     }
 
-    .dropzone strong {
-      font-size: 1rem;
-    }
+    .dropzone strong { font-size: 1rem; }
 
     .dropzone span {
       color: var(--muted);
@@ -145,6 +144,25 @@
       border: 1px solid var(--line);
     }
 
+    .btn-split {
+      background: #1d4ed8;
+      color: #fff;
+      border: 1px solid #1e40af;
+    }
+
+    .btn:disabled {
+      opacity: 0.55;
+      cursor: not-allowed;
+      transform: none;
+    }
+
+    .quick-note {
+      margin-top: 10px;
+      color: var(--muted);
+      font-size: 0.85rem;
+      line-height: 1.4;
+    }
+
     .info-grid {
       display: grid;
       grid-template-columns: repeat(1, minmax(0, 1fr));
@@ -168,7 +186,8 @@
       letter-spacing: 0.04em;
     }
 
-    .message-stack {
+    .message-stack,
+    .status-list {
       display: grid;
       gap: 10px;
       margin-top: 14px;
@@ -182,29 +201,9 @@
       border: 1px solid transparent;
     }
 
-    .message-error {
-      color: var(--danger);
-      background: var(--danger-bg);
-      border-color: #fecaca;
-    }
-
-    .message-warn {
-      color: var(--warn);
-      background: var(--warn-bg);
-      border-color: #fde68a;
-    }
-
-    .message-ok {
-      color: var(--ok);
-      background: var(--ok-bg);
-      border-color: #bbf7d0;
-    }
-
-    .status-list {
-      display: grid;
-      gap: 10px;
-      margin-top: 14px;
-    }
+    .message-error { color: var(--danger); background: var(--danger-bg); border-color: #fecaca; }
+    .message-warn { color: var(--warn); background: var(--warn-bg); border-color: #fde68a; }
+    .message-ok { color: var(--ok); background: var(--ok-bg); border-color: #bbf7d0; }
 
     .status-item {
       border: 1px solid var(--line);
@@ -222,10 +221,7 @@
       gap: 10px;
     }
 
-    .status-name {
-      font-weight: 700;
-      overflow-wrap: anywhere;
-    }
+    .status-name { font-weight: 700; overflow-wrap: anywhere; }
 
     .status-badge {
       white-space: nowrap;
@@ -241,11 +237,44 @@
     .status-badge.ready { background: #dcfce7; color: #166534; }
     .status-badge.error { background: #fee2e2; color: #b91c1c; }
 
-    .status-meta {
-      color: var(--muted);
-      font-size: 0.88rem;
-      line-height: 1.4;
+    .status-meta { color: var(--muted); font-size: 0.88rem; line-height: 1.4; }
+    .status-actions { margin-top: 6px; }
+    .status-retry-btn {
+      border: 1px solid #fecaca;
+      background: #fff1f2;
+      color: #b91c1c;
+      border-radius: 999px;
+      font: inherit;
+      font-size: 0.82rem;
+      font-weight: 700;
+      padding: 5px 10px;
+      cursor: pointer;
     }
+
+    .tabs {
+      display: flex;
+      gap: 8px;
+      margin-bottom: 12px;
+      flex-wrap: wrap;
+    }
+
+    .tab-btn {
+      border: 1px solid var(--line);
+      background: #f8fbff;
+      color: #0f172a;
+      border-radius: 12px;
+      padding: 8px 12px;
+      font-weight: 700;
+      cursor: pointer;
+    }
+
+    .tab-btn.active {
+      background: #e0f2fe;
+      border-color: #7dd3fc;
+      color: #0c4a6e;
+    }
+
+    .tab-panel.hidden { display: none; }
 
     .table-wrap {
       overflow: auto;
@@ -268,25 +297,11 @@
       font-size: 0.93rem;
     }
 
-    thead th {
-      background: #f5fbfb;
-      position: sticky;
-      top: 0;
-      z-index: 1;
-    }
-
-    tbody tr.section-row td {
-      background: #f8fafc;
-      font-weight: 800;
-      color: #0f172a;
-    }
-
+    thead th { background: #f5fbfb; position: sticky; top: 0; z-index: 1; }
+    tbody tr.section-row td { background: #f8fafc; font-weight: 800; color: #0f172a; }
     tbody tr:last-child td { border-bottom: 0; }
 
-    .metric-label {
-      min-width: 240px;
-      font-weight: 700;
-    }
+    .metric-label { min-width: 240px; font-weight: 700; }
 
     .metric-sub {
       display: block;
@@ -297,9 +312,74 @@
       line-height: 1.35;
     }
 
-    .num {
-      white-space: nowrap;
-      font-variant-numeric: tabular-nums;
+    .num { white-space: nowrap; font-variant-numeric: tabular-nums; }
+
+    .map-toolbar {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-bottom: 10px;
+      align-items: center;
+    }
+
+    .select {
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      padding: 8px 10px;
+      font: inherit;
+      min-width: 220px;
+      max-width: 100%;
+    }
+
+    .map-summary {
+      display: grid;
+      grid-template-columns: repeat(1, minmax(0, 1fr));
+      gap: 10px;
+      margin-bottom: 10px;
+    }
+
+    .kpi {
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      padding: 10px 12px;
+      background: #f8fafc;
+    }
+
+    .kpi small {
+      display: block;
+      color: var(--muted);
+      margin-bottom: 3px;
+      text-transform: uppercase;
+      font-size: 0.72rem;
+      letter-spacing: .05em;
+    }
+
+    #map {
+      width: 100%;
+      height: 420px;
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      overflow: hidden;
+    }
+
+    .legend {
+      margin-top: 10px;
+      display: grid;
+      gap: 6px;
+      color: var(--muted);
+      font-size: 0.86rem;
+    }
+
+    .legend-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .legend-color {
+      width: 14px;
+      height: 14px;
+      border-radius: 4px;
     }
 
     .footnote {
@@ -313,10 +393,11 @@
 
     @media (min-width: 860px) {
       .layout {
-        grid-template-columns: 360px minmax(0, 1fr);
+        grid-template-columns: 380px minmax(0, 1fr);
         align-items: start;
       }
-      .info-grid {
+      .info-grid,
+      .map-summary {
         grid-template-columns: repeat(2, minmax(0, 1fr));
       }
     }
@@ -325,8 +406,8 @@
 <body>
   <div class="page">
     <section class="hero">
-      <h1 class="title">Analyzátor tras GPX v2</h1>
-      <p class="subtitle">Nahraj více GPX exportů z Mapy.com. Stránka ověří vstup, načte trasu, dohledá okolní silnice a zastavěné plochy přes Overpass API a spočítá kilometry i procenta pro sídla / mimo sídla a pro jednotlivé třídy silnic.</p>
+      <h1 class="title">Analyzátor tras GPX v3</h1>
+      <p class="subtitle">Rychlá a odolná analýza GPX: město/mimo město + volitelně dálnice/rychlostní vs ostatní. Chyby API se neopakují automaticky, opakování spouštíš ručně.</p>
     </section>
 
     <section class="layout">
@@ -334,31 +415,22 @@
         <h2>Vstup</h2>
         <div id="dropzone" class="dropzone" role="button" tabindex="0" aria-label="Nahrát GPX soubory">
           <strong>Přetáhni GPX soubory sem</strong>
-          <span>nebo klikni pro výběr. Pro správnou analýzu použij export z Mapy.com jako GPX se skutečným trackem, ne jen autonavigační route body.</span>
+          <span>nebo klikni pro výběr. Použij export se skutečným trackem (trkpt), ne jen route body.</span>
           <div class="actions">
             <button class="btn btn-primary" type="button" id="pickBtn">Vybrat GPX</button>
             <button class="btn btn-ghost" type="button" id="clearBtn">Vymazat vše</button>
+            <button class="btn btn-split" type="button" id="splitBtn" disabled>Rozdělit D+R vs ostatní</button>
           </div>
           <input id="fileInput" type="file" accept=".gpx,application/gpx+xml,application/xml,text/xml" multiple class="hidden" />
         </div>
 
+        <p class="quick-note">Výchozí režim je rychlý: nejprve město vs mimo město. Rozdělení dálnice/rychlostní vs ostatní zapni zvláštním tlačítkem. Při chybě 504 použij ruční „Zkusit znovu“.</p>
+
         <div class="info-grid">
-          <div class="chip">
-            <small>API</small>
-            Overpass API
-          </div>
-          <div class="chip">
-            <small>Režim</small>
-            Klientsky v prohlížeči
-          </div>
-          <div class="chip">
-            <small>Dělení sídla</small>
-            Zastavěné plochy + městské silnice
-          </div>
-          <div class="chip">
-            <small>Dělení silnic</small>
-            highway=* z OSM
-          </div>
+          <div class="chip"><small>API</small>Overpass API</div>
+          <div class="chip"><small>Režim</small>Rychlý + volitelné D+R</div>
+          <div class="chip"><small>Sídla</small>Zastavěné plochy + městské silnice</div>
+          <div class="chip"><small>Mapa</small>Záložka „Mapa“</div>
         </div>
 
         <div class="message-stack" id="messages"></div>
@@ -366,43 +438,121 @@
       </div>
 
       <div class="card">
-        <h2>Výsledky</h2>
-        <div id="tablePlaceholder" class="message message-warn">Zatím nejsou načtené žádné validní GPX soubory.</div>
-        <div id="tableWrap" class="table-wrap hidden"></div>
-        <p class="footnote">Poznámka: výpočet je výrazně přesnější než čistá heuristika, ale stále je omezený tím, co je v OpenStreetMap v dané oblasti opravdu zmapované. U sídel je použita pragmatická definice: úsek je veden jako „přes sídlo“, pokud leží v zastavěné ploše nebo je přiřazený k typicky městské silnici.</p>
+        <h2>Výstupy</h2>
+        <div class="tabs">
+          <button class="tab-btn active" type="button" data-tab="results">Výsledky</button>
+          <button class="tab-btn" type="button" data-tab="map">Mapa</button>
+        </div>
+
+        <div id="resultsPanel" class="tab-panel">
+          <div id="tablePlaceholder" class="message message-warn">Zatím nejsou načtené žádné validní GPX soubory.</div>
+          <div id="tableWrap" class="table-wrap hidden"></div>
+        </div>
+
+        <div id="mapPanel" class="tab-panel hidden">
+          <div id="mapPlaceholder" class="message message-warn">Načti aspoň jeden validní GPX soubor pro zobrazení mapy.</div>
+          <div id="mapContent" class="hidden">
+            <div class="map-toolbar">
+              <label for="trackSelect"><strong>Trasa:</strong></label>
+              <select id="trackSelect" class="select"></select>
+            </div>
+
+            <div class="map-summary" id="mapSummary"></div>
+            <div id="map"></div>
+            <div class="legend" id="legend"></div>
+          </div>
+        </div>
+
+        <p class="footnote">Poznámka: výpočet je pragmatický. Přesnost závisí na kvalitě OpenStreetMap dat v daném regionu.</p>
         <p class="footnote">Mapová data © OpenStreetMap contributors.</p>
       </div>
     </section>
   </div>
 
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
   <script>
     const OVERPASS_ENDPOINT = 'https://overpass-api.de/api/interpreter';
     const MAX_FILE_SIZE_MB = 12;
-    const HIGHWAY_REGEX = '^(motorway|motorway_link|trunk|trunk_link|primary|primary_link|secondary|secondary_link|tertiary|tertiary_link|unclassified|residential|service|living_street|road|track)$';
+    const FAST_HIGHWAY_REGEX = '^(motorway|motorway_link|trunk|trunk_link)$';
+    const URBAN_HIGHWAY_REGEX = '^(residential|service|living_street)$';
     const SETTLEMENT_LANDUSE_REGEX = '^(residential|commercial|industrial|retail|garages)$';
     const PLACE_REGEX = '^(city|town|village|suburb|neighbourhood|quarter|hamlet)$';
     const ROAD_MATCH_THRESHOLD_METERS = 90;
 
+    const COLOR_URBAN = '#ef4444';
+    const COLOR_RURAL = '#22c55e';
+    const COLOR_FAST = '#2563eb';
+    const COLOR_OTHER = '#64748b';
+    const TILE_SOURCES = [
+      {
+        name: 'OpenStreetMap',
+        url: 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
+        options: { maxZoom: 19, attribution: '&copy; OpenStreetMap contributors' }
+      },
+      {
+        name: 'Carto Light',
+        url: 'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png',
+        options: { maxZoom: 20, attribution: '&copy; OpenStreetMap contributors &copy; CARTO' }
+      }
+    ];
+
     const state = {
       files: [],
-      messages: []
+      messages: [],
+      splitMode: false,
+      activeTab: 'results',
+      selectedTrackId: null,
+      map: null,
+      mapLayers: [],
+      tileLayerIndex: 0,
+      tileErrorCount: 0,
+      tileLayer: null
     };
 
     const fileInput = document.getElementById('fileInput');
     const pickBtn = document.getElementById('pickBtn');
     const clearBtn = document.getElementById('clearBtn');
+    const splitBtn = document.getElementById('splitBtn');
     const dropzone = document.getElementById('dropzone');
     const messagesEl = document.getElementById('messages');
     const statusListEl = document.getElementById('statusList');
     const tableWrapEl = document.getElementById('tableWrap');
     const tablePlaceholderEl = document.getElementById('tablePlaceholder');
+    const tabBtns = Array.from(document.querySelectorAll('.tab-btn'));
+    const resultsPanel = document.getElementById('resultsPanel');
+    const mapPanel = document.getElementById('mapPanel');
+    const trackSelectEl = document.getElementById('trackSelect');
+    const mapContentEl = document.getElementById('mapContent');
+    const mapPlaceholderEl = document.getElementById('mapPlaceholder');
+    const mapSummaryEl = document.getElementById('mapSummary');
+    const legendEl = document.getElementById('legend');
+
+    statusListEl.addEventListener('click', async (e) => {
+      const retryBtn = e.target.closest('[data-retry-id]');
+      if (!retryBtn) return;
+      const entry = state.files.find((f) => f.id === retryBtn.dataset.retryId);
+      if (!entry || !entry.coords?.length) return;
+      await reanalyzeEntry(entry);
+    });
 
     pickBtn.addEventListener('click', () => fileInput.click());
     fileInput.addEventListener('change', (e) => handleFiles(e.target.files));
     clearBtn.addEventListener('click', clearAll);
+    splitBtn.addEventListener('click', toggleSplitMode);
+    trackSelectEl.addEventListener('change', (e) => {
+      state.selectedTrackId = e.target.value;
+      renderMapTab();
+    });
+
+    tabBtns.forEach((btn) => {
+      btn.addEventListener('click', () => {
+        state.activeTab = btn.dataset.tab;
+        renderTabs();
+      });
+    });
 
     dropzone.addEventListener('click', (e) => {
-      if (e.target === pickBtn || e.target === clearBtn) return;
+      if ([pickBtn, clearBtn, splitBtn].includes(e.target)) return;
       fileInput.click();
     });
 
@@ -419,7 +569,6 @@
     });
 
     dropzone.addEventListener('dragleave', () => dropzone.classList.remove('dragover'));
-
     dropzone.addEventListener('drop', (e) => {
       e.preventDefault();
       dropzone.classList.remove('dragover');
@@ -429,10 +578,23 @@
     function clearAll() {
       state.files = [];
       state.messages = [];
+      state.splitMode = false;
+      state.selectedTrackId = null;
+      state.tileLayerIndex = 0;
       fileInput.value = '';
+      splitBtn.disabled = true;
+      splitBtn.textContent = 'Rozdělit D+R vs ostatní';
       renderMessages();
       renderStatuses();
       renderTable();
+      renderMapTab();
+    }
+
+    function toggleSplitMode() {
+      state.splitMode = !state.splitMode;
+      splitBtn.textContent = state.splitMode ? 'Skrýt D+R rozdělení' : 'Rozdělit D+R vs ostatní';
+      renderTable();
+      renderMapTab();
     }
 
     function addMessage(type, text) {
@@ -461,15 +623,29 @@
         const item = document.createElement('div');
         item.className = 'status-item';
         const label = fileEntry.status === 'ready' ? 'Hotovo' : fileEntry.status === 'processing' ? 'Zpracování' : 'Chyba';
+        const retryHtml = fileEntry.status === 'error' && fileEntry.coords?.length
+          ? `<div class="status-actions"><button type="button" class="status-retry-btn" data-retry-id="${escapeHtml(fileEntry.id)}">Zkusit znovu ručně</button></div>`
+          : '';
         item.innerHTML = `
           <div class="status-head">
             <div class="status-name">${escapeHtml(fileEntry.name)}</div>
             <div class="status-badge ${fileEntry.status}">${label}</div>
           </div>
           <div class="status-meta">${escapeHtml(fileEntry.meta || '')}</div>
+          ${retryHtml}
         `;
         statusListEl.appendChild(item);
       });
+    }
+
+    function renderTabs() {
+      tabBtns.forEach((btn) => btn.classList.toggle('active', btn.dataset.tab === state.activeTab));
+      resultsPanel.classList.toggle('hidden', state.activeTab !== 'results');
+      mapPanel.classList.toggle('hidden', state.activeTab !== 'map');
+      if (state.activeTab === 'map') {
+        renderMapTab();
+        setTimeout(() => state.map?.invalidateSize(), 60);
+      }
     }
 
     async function handleFiles(fileList) {
@@ -488,10 +664,13 @@
           id: `${file.name}-${file.size}-${cryptoRandomString()}`,
           name: file.name,
           size: file.size,
+          sourceFile: file,
+          coords: null,
           status: 'processing',
           meta: 'Čtu soubor…',
           result: null
         };
+
         state.files.push(entry);
         renderStatuses();
         renderTable();
@@ -499,14 +678,17 @@
         try {
           const text = await readFileAsText(file);
           const coords = parseGpx(text);
+          entry.coords = coords;
           entry.meta = `Načteno ${coords.length.toLocaleString('cs-CZ')} bodů. Připravuji analýzu…`;
           renderStatuses();
+
           entry.result = await analyzeTrack(coords, file.name, (meta) => {
             entry.meta = meta;
             renderStatuses();
           });
+
           entry.status = 'ready';
-          entry.meta = `Hotovo. ${formatKm(entry.result.totalKm)} · sídla ${formatKm(entry.result.urbanKm)} · mimo ${formatKm(entry.result.ruralKm)}`;
+          entry.meta = `Hotovo. ${formatKm(entry.result.totalKm)} · město ${formatKm(entry.result.urbanKm)} · mimo ${formatKm(entry.result.ruralKm)}`;
         } catch (error) {
           entry.status = 'error';
           entry.meta = normalizeError(error);
@@ -520,9 +702,42 @@
         setMessages([...state.messages, ...newMessages]);
       }
 
-      if (state.files.some((x) => x.status === 'ready') && !state.messages.some((m) => m.type === 'ok')) {
-        addMessage('ok', 'Analýza používá pouze veřejný Overpass API dotaz nad OpenStreetMap daty. U velmi dlouhých tras může zpracování chvíli trvat.');
+      if (state.files.some((x) => x.status === 'ready')) {
+        splitBtn.disabled = false;
+        if (!state.messages.some((m) => m.type === 'ok')) {
+          addMessage('ok', 'Hotovo. Výchozí přehled je rychlý (město / mimo město). Pro D+R použij modré tlačítko.');
+        }
       }
+
+      if (!state.selectedTrackId) {
+        const firstReady = state.files.find((f) => f.status === 'ready');
+        state.selectedTrackId = firstReady?.id || null;
+      }
+
+      updateTrackSelect();
+      renderMapTab();
+    }
+
+    async function reanalyzeEntry(entry) {
+      entry.status = 'processing';
+      entry.meta = 'Ruční opakování analýzy…';
+      entry.result = null;
+      renderStatuses();
+      renderTable();
+      try {
+        entry.result = await analyzeTrack(entry.coords, entry.name, (meta) => {
+          entry.meta = meta;
+          renderStatuses();
+        });
+        entry.status = 'ready';
+        entry.meta = `Hotovo. ${formatKm(entry.result.totalKm)} · město ${formatKm(entry.result.urbanKm)} · mimo ${formatKm(entry.result.ruralKm)}`;
+      } catch (error) {
+        entry.status = 'error';
+        entry.meta = normalizeError(error);
+      }
+      renderStatuses();
+      renderTable();
+      renderMapTab();
     }
 
     function readFileAsText(file) {
@@ -546,15 +761,13 @@
       const parser = new DOMParser();
       const xml = parser.parseFromString(xmlText, 'application/xml');
       const parseError = xml.querySelector('parsererror');
-      if (parseError) {
-        throw new Error('GPX má neplatnou XML strukturu.');
-      }
+      if (parseError) throw new Error('GPX má neplatnou XML strukturu.');
 
       const trkpts = Array.from(xml.getElementsByTagName('trkpt'));
       if (trkpts.length < 2) {
         const rtepts = xml.getElementsByTagName('rtept').length;
         if (rtepts > 0) {
-          throw new Error('Soubor obsahuje jen route body bez plného tracku. V Mapy.com exportuj GPX bez volby pro autonavigaci.');
+          throw new Error('Soubor obsahuje jen route body bez plného tracku. Exportuj prosím track (trkpt).');
         }
         throw new Error('Soubor neobsahuje použitelný track.');
       }
@@ -576,10 +789,7 @@
         }
       }
 
-      if (deduped.length < 2) {
-        throw new Error('Track má po odstranění duplicit méně než 2 body.');
-      }
-
+      if (deduped.length < 2) throw new Error('Track má po odstranění duplicit méně než 2 body.');
       return deduped;
     }
 
@@ -587,58 +797,45 @@
       onProgress('Počítám segmenty trasy…');
       const segments = buildSegments(coords);
       const totalKm = segments.reduce((sum, s) => sum + s.lengthKm, 0);
-      if (totalKm <= 0.02) {
-        throw new Error('Trasa je příliš krátká na smysluplnou analýzu.');
-      }
+      if (totalKm <= 0.02) throw new Error('Trasa je příliš krátká na smysluplnou analýzu.');
 
       onProgress('Připravuji koridor pro Overpass dotazy…');
       const bboxes = buildCorridorBboxes(coords);
-      const fetched = await fetchOverpassData(bboxes, onProgress, fileName);
-      const roads = fetched.roads;
+      const fetched = await fetchOverpassData(bboxes, onProgress);
+      const fastRoads = fetched.fastRoads;
+      const urbanRoads = fetched.urbanRoads;
       const polygons = fetched.polygons;
 
-      if (!roads.length) {
-        throw new Error('V okolí trasy se nepodařilo načíst žádné silnice z Overpass API.');
-      }
-
-      onProgress('Přiřazuji segmentům silnice a sídla…');
-      const roadTotalsKm = new Map();
+      onProgress('Přiřazuji segmentům město/mimo město a D+R…');
       let urbanKm = 0;
       let ruralKm = 0;
-      let unknownRoadKm = 0;
+      let fastRoadKm = 0;
+      let otherRoadKm = 0;
+
+      const segmentRows = [];
 
       for (const segment of segments) {
-        const matchedRoad = findNearestRoad(segment.midpoint, roads);
-        const roadClass = normalizeHighwayClass(matchedRoad?.tags?.highway);
-        if (!matchedRoad || matchedRoad.distanceMeters > ROAD_MATCH_THRESHOLD_METERS) {
-          incrementMap(roadTotalsKm, 'Neurčeno', segment.lengthKm);
-          unknownRoadKm += segment.lengthKm;
-        } else {
-          incrementMap(roadTotalsKm, roadClass.label, segment.lengthKm);
-        }
-
         const inBuiltUpArea = polygons.some((polygon) => pointInPolygon(segment.midpoint, polygon));
-        const urbanByRoad = isUrbanRoad(matchedRoad?.tags, roadClass.key);
+        const matchedUrbanRoad = findNearestRoad(segment.midpoint, urbanRoads);
+        const urbanByRoad = Boolean(matchedUrbanRoad && matchedUrbanRoad.distanceMeters <= ROAD_MATCH_THRESHOLD_METERS);
         const isUrban = inBuiltUpArea || urbanByRoad;
 
-        if (isUrban) {
-          urbanKm += segment.lengthKm;
-        } else {
-          ruralKm += segment.lengthKm;
-        }
+        if (isUrban) urbanKm += segment.lengthKm;
+        else ruralKm += segment.lengthKm;
+
+        const matchedFastRoad = findNearestRoad(segment.midpoint, fastRoads);
+        const isFastRoad = Boolean(matchedFastRoad && matchedFastRoad.distanceMeters <= ROAD_MATCH_THRESHOLD_METERS);
+        if (isFastRoad) fastRoadKm += segment.lengthKm;
+        else otherRoadKm += segment.lengthKm;
+
+        segmentRows.push({
+          a: segment.a,
+          b: segment.b,
+          lengthKm: segment.lengthKm,
+          isUrban,
+          isFastRoad
+        });
       }
-
-      const roadRows = ROAD_CLASS_ORDER.map((roadClassKey) => {
-        const label = ROAD_CLASS_LABELS[roadClassKey];
-        const km = roadTotalsKm.get(label) || 0;
-        return { key: roadClassKey, label, km, pct: totalKm > 0 ? (km / totalKm) * 100 : 0 };
-      }).filter((row) => row.km > 0.001);
-
-      if (unknownRoadKm > 0.001 && !roadRows.some((row) => row.label === 'Neurčeno')) {
-        roadRows.push({ key: 'unknown', label: 'Neurčeno', km: unknownRoadKm, pct: totalKm > 0 ? (unknownRoadKm / totalKm) * 100 : 0 });
-      }
-
-      roadRows.sort((a, b) => b.km - a.km);
 
       return {
         fileName,
@@ -647,11 +844,16 @@
         totalKm,
         urbanKm,
         ruralKm,
+        fastRoadKm,
+        otherRoadKm,
         urbanPct: totalKm > 0 ? (urbanKm / totalKm) * 100 : 0,
         ruralPct: totalKm > 0 ? (ruralKm / totalKm) * 100 : 0,
-        roadRows,
+        fastRoadPct: totalKm > 0 ? (fastRoadKm / totalKm) * 100 : 0,
+        otherRoadPct: totalKm > 0 ? (otherRoadKm / totalKm) * 100 : 0,
+        segments: segmentRows,
         debug: {
-          fetchedRoadCount: roads.length,
+          fetchedFastRoadCount: fastRoads.length,
+          fetchedUrbanRoadCount: urbanRoads.length,
           fetchedPolygonCount: polygons.length,
           fetchedBboxes: bboxes.length
         }
@@ -676,8 +878,8 @@
     }
 
     function buildCorridorBboxes(coords) {
-      const chunkDistanceKm = 18;
-      const padDeg = 0.007;
+      const chunkDistanceKm = 12;
+      const padDeg = 0.005;
       const boxes = [];
 
       let startIndex = 0;
@@ -693,10 +895,7 @@
         }
       }
 
-      if (!boxes.length) {
-        boxes.push(expandedBBox(coords, padDeg));
-      }
-
+      if (!boxes.length) boxes.push(expandedBBox(coords, padDeg));
       return mergeBBoxes(boxes);
     }
 
@@ -708,12 +907,7 @@
         if (p.lon < minLon) minLon = p.lon;
         if (p.lon > maxLon) maxLon = p.lon;
       });
-      return {
-        south: minLat - padDeg,
-        west: minLon - padDeg,
-        north: maxLat + padDeg,
-        east: maxLon + padDeg
-      };
+      return { south: minLat - padDeg, west: minLon - padDeg, north: maxLat + padDeg, east: maxLon + padDeg };
     }
 
     function mergeBBoxes(boxes) {
@@ -737,16 +931,12 @@
 
     function boxesTouchOrOverlap(a, b) {
       const gap = 0.004;
-      return !(
-        a.east + gap < b.west ||
-        b.east + gap < a.west ||
-        a.north + gap < b.south ||
-        b.north + gap < a.south
-      );
+      return !(a.east + gap < b.west || b.east + gap < a.west || a.north + gap < b.south || b.north + gap < a.south);
     }
 
-    async function fetchOverpassData(bboxes, onProgress, fileName) {
-      const roadsById = new Map();
+    async function fetchOverpassData(bboxes, onProgress) {
+      const fastRoadsById = new Map();
+      const urbanRoadsById = new Map();
       const polygonsById = new Map();
 
       for (let i = 0; i < bboxes.length; i++) {
@@ -760,7 +950,10 @@
         });
 
         if (!response.ok) {
-          throw new Error(`Overpass API vrátilo chybu ${response.status}. Zkus to prosím za chvíli znovu.`);
+          if (response.status === 504) {
+            throw new Error('Overpass API je přetížené (504). Klikni na „Zkusit znovu ručně“ u trasy.');
+          }
+          throw new Error(`Overpass API vrátilo chybu ${response.status}. Klikni na „Zkusit znovu ručně“.`);
         }
 
         const data = await response.json();
@@ -774,12 +967,19 @@
           const tags = element.tags || {};
 
           if (tags.highway) {
-            roadsById.set(key, {
+            const roadData = {
               id: key,
               tags,
               geometry: element.geometry.map((g) => ({ lat: g.lat, lon: g.lon })),
               bbox: lineBBox(element.geometry)
-            });
+            };
+            const highway = String(tags.highway || '');
+            if (/^motorway(_link)?$/.test(highway) || /^trunk(_link)?$/.test(highway)) {
+              fastRoadsById.set(key, roadData);
+            }
+            if (/^(residential|service|living_street)$/.test(highway)) {
+              urbanRoadsById.set(key, roadData);
+            }
           }
 
           const isPolygonCandidate = isClosedWay(element.geometry) && (tags.landuse || tags.place);
@@ -790,7 +990,8 @@
       }
 
       return {
-        roads: Array.from(roadsById.values()),
+        fastRoads: Array.from(fastRoadsById.values()),
+        urbanRoads: Array.from(urbanRoadsById.values()),
         polygons: Array.from(polygonsById.values())
       };
     }
@@ -803,7 +1004,7 @@
       return `
         [out:json][timeout:25];
         (
-          way["highway"~"${HIGHWAY_REGEX}"]["area"!="yes"](${s},${w},${n},${e});
+          way["highway"~"${FAST_HIGHWAY_REGEX}|${URBAN_HIGHWAY_REGEX}"]["area"!="yes"](${s},${w},${n},${e});
           way["landuse"~"${SETTLEMENT_LANDUSE_REGEX}"](${s},${w},${n},${e});
           way["place"~"${PLACE_REGEX}"](${s},${w},${n},${e});
         );
@@ -871,13 +1072,8 @@
       return Math.hypot(px - cx, py - cy);
     }
 
-    function latToMeters(lat) {
-      return lat * 111320;
-    }
-
-    function lonToMeters(lon, refLat) {
-      return lon * 111320 * Math.cos(refLat * Math.PI / 180);
-    }
+    function latToMeters(lat) { return lat * 111320; }
+    function lonToMeters(lon, refLat) { return lon * 111320 * Math.cos(refLat * Math.PI / 180); }
 
     function pointInPolygon(point, polygon) {
       let inside = false;
@@ -891,83 +1087,31 @@
       return inside;
     }
 
-    function isUrbanRoad(tags = {}, classKey) {
-      const urbanClasses = new Set(['residential', 'service', 'living_street']);
-      if (urbanClasses.has(classKey)) return true;
-
-      const maxspeed = parseMaxspeed(tags.maxspeed || tags['source:maxspeed'] || '');
-      if (Number.isFinite(maxspeed) && maxspeed <= 60) return true;
-
-      return false;
-    }
-
-    function parseMaxspeed(value) {
-      if (!value) return NaN;
-      const match = String(value).match(/(\d{1,3})/);
-      return match ? Number.parseFloat(match[1]) : NaN;
-    }
-
-    const ROAD_CLASS_LABELS = {
-      motorway: 'Dálnice / motorway',
-      trunk: 'Silnice pro motorová vozidla / trunk',
-      primary: 'Primary',
-      secondary: 'Secondary',
-      tertiary: 'Tertiary',
-      unclassified: 'Unclassified',
-      residential: 'Residential',
-      service: 'Service',
-      living_street: 'Living street',
-      road: 'Road',
-      track: 'Track',
-      unknown: 'Neurčeno'
-    };
-
-    const ROAD_CLASS_ORDER = ['motorway', 'trunk', 'primary', 'secondary', 'tertiary', 'unclassified', 'residential', 'service', 'living_street', 'road', 'track'];
-
-    function normalizeHighwayClass(highwayValue) {
-      const value = String(highwayValue || '').trim();
-      if (value.startsWith('motorway')) return { key: 'motorway', label: ROAD_CLASS_LABELS.motorway };
-      if (value.startsWith('trunk')) return { key: 'trunk', label: ROAD_CLASS_LABELS.trunk };
-      if (value.startsWith('primary')) return { key: 'primary', label: ROAD_CLASS_LABELS.primary };
-      if (value.startsWith('secondary')) return { key: 'secondary', label: ROAD_CLASS_LABELS.secondary };
-      if (value.startsWith('tertiary')) return { key: 'tertiary', label: ROAD_CLASS_LABELS.tertiary };
-      if (value === 'unclassified') return { key: 'unclassified', label: ROAD_CLASS_LABELS.unclassified };
-      if (value === 'residential') return { key: 'residential', label: ROAD_CLASS_LABELS.residential };
-      if (value === 'service') return { key: 'service', label: ROAD_CLASS_LABELS.service };
-      if (value === 'living_street') return { key: 'living_street', label: ROAD_CLASS_LABELS.living_street };
-      if (value === 'road') return { key: 'road', label: ROAD_CLASS_LABELS.road };
-      if (value === 'track') return { key: 'track', label: ROAD_CLASS_LABELS.track };
-      return { key: 'unknown', label: ROAD_CLASS_LABELS.unknown };
-    }
-
-    function incrementMap(map, key, value) {
-      map.set(key, (map.get(key) || 0) + value);
-    }
-
     function renderTable() {
-      const readyResults = state.files.filter((x) => x.status === 'ready' && x.result).map((x) => x.result);
+      const readyEntries = state.files.filter((x) => x.status === 'ready' && x.result);
+      const readyResults = readyEntries.map((x) => x.result);
       if (!readyResults.length) {
         tableWrapEl.classList.add('hidden');
         tablePlaceholderEl.classList.remove('hidden');
+        tablePlaceholderEl.textContent = 'Zatím nejsou načtené žádné validní GPX soubory.';
         return;
       }
 
       tablePlaceholderEl.classList.add('hidden');
       tableWrapEl.classList.remove('hidden');
 
-      const roadLabels = Array.from(new Set(readyResults.flatMap((r) => r.roadRows.map((row) => row.label))));
-      const roadOrder = ROAD_CLASS_ORDER.map((key) => ROAD_CLASS_LABELS[key]).concat(['Neurčeno']);
-      roadLabels.sort((a, b) => roadOrder.indexOf(a) - roadOrder.indexOf(b));
-
       const rows = [
         { section: 'Souhrn', label: 'Celková délka', sub: 'Součet všech segmentů tracku', formatter: (r) => formatKm(r.totalKm) },
-        { section: 'Sídelnost', label: 'Přes sídla', sub: 'Zastavěná plocha nebo typicky městská silnice', formatter: (r) => `${formatKm(r.urbanKm)} · ${formatPct(r.urbanPct)}` },
-        { section: 'Sídelnost', label: 'Mimo sídla', sub: 'Mimo zastavěné plochy', formatter: (r) => `${formatKm(r.ruralKm)} · ${formatPct(r.ruralPct)}` },
-        { section: 'Technické', label: 'Track body', sub: 'Počet bodů v GPX', formatter: (r) => r.pointCount.toLocaleString('cs-CZ') },
-        { section: 'Technické', label: 'Segmenty', sub: 'Počet analyzovaných úseků', formatter: (r) => r.segmentCount.toLocaleString('cs-CZ') },
-        { section: 'Technické', label: 'Načtené silnice', sub: 'Počet OSM way segmentů z Overpass', formatter: (r) => r.debug.fetchedRoadCount.toLocaleString('cs-CZ') },
-        { section: 'Technické', label: 'Načtené plochy sídel', sub: 'Počet polygonů landuse/place', formatter: (r) => r.debug.fetchedPolygonCount.toLocaleString('cs-CZ') }
+        { section: 'Město vs mimo město', label: 'Ve městě', sub: 'Zastavěná plocha nebo městská silnice', formatter: (r) => `${formatKm(r.urbanKm)} · ${formatPct(r.urbanPct)}` },
+        { section: 'Město vs mimo město', label: 'Mimo město', sub: 'Mimo zastavěné plochy', formatter: (r) => `${formatKm(r.ruralKm)} · ${formatPct(r.ruralPct)}` }
       ];
+
+      if (state.splitMode) {
+        rows.push(
+          { section: 'Dálnice/rychlostní vs ostatní', label: 'Dálnice + rychlostní', sub: 'motorway + trunk', formatter: (r) => `${formatKm(r.fastRoadKm)} · ${formatPct(r.fastRoadPct)}` },
+          { section: 'Dálnice/rychlostní vs ostatní', label: 'Ostatní silnice', sub: 'vše mimo motorway/trunk', formatter: (r) => `${formatKm(r.otherRoadKm)} · ${formatPct(r.otherRoadPct)}` }
+        );
+      }
 
       const sections = new Map();
       rows.forEach((row) => {
@@ -975,19 +1119,7 @@
         sections.get(row.section).push(row);
       });
 
-      if (roadLabels.length) {
-        sections.set('Třídy silnic', roadLabels.map((label) => ({
-          section: 'Třídy silnic',
-          label,
-          sub: 'Kilometry a procenta na této třídě',
-          formatter: (r) => {
-            const found = r.roadRows.find((row) => row.label === label);
-            return found ? `${formatKm(found.km)} · ${formatPct(found.pct)}` : '0,0 km · 0,0 %';
-          }
-        })));
-      }
-
-      const headers = readyResults.map((r) => r.fileName);
+      const headers = readyEntries.map((r) => r.name);
       let html = '<table><thead><tr><th class="metric-label">Metrika</th>';
       headers.forEach((header) => { html += `<th>${escapeHtml(header)}</th>`; });
       html += '</tr></thead><tbody>';
@@ -1005,6 +1137,134 @@
 
       html += '</tbody></table>';
       tableWrapEl.innerHTML = html;
+    }
+
+    function updateTrackSelect() {
+      const readyEntries = state.files.filter((x) => x.status === 'ready' && x.result);
+      trackSelectEl.innerHTML = '';
+      readyEntries.forEach((entry) => {
+        const option = document.createElement('option');
+        option.value = entry.id;
+        option.textContent = entry.name;
+        trackSelectEl.appendChild(option);
+      });
+
+      if (!readyEntries.some((x) => x.id === state.selectedTrackId)) {
+        state.selectedTrackId = readyEntries[0]?.id || null;
+      }
+
+      trackSelectEl.value = state.selectedTrackId || '';
+    }
+
+    function renderMapTab() {
+      const readyEntries = state.files.filter((x) => x.status === 'ready' && x.result);
+      if (!readyEntries.length) {
+        mapContentEl.classList.add('hidden');
+        mapPlaceholderEl.classList.remove('hidden');
+        destroyMapLayers();
+        return;
+      }
+
+      mapPlaceholderEl.classList.add('hidden');
+      mapContentEl.classList.remove('hidden');
+      updateTrackSelect();
+
+      const selected = readyEntries.find((x) => x.id === state.selectedTrackId) || readyEntries[0];
+      if (!selected) return;
+
+      renderMapSummary(selected.result);
+      renderLegend();
+      ensureMap();
+      drawSegmentsOnMap(selected.result);
+    }
+
+    function renderMapSummary(result) {
+      mapSummaryEl.innerHTML = `
+        <div class="kpi"><small>Celkem</small><strong>${formatKm(result.totalKm)}</strong></div>
+        <div class="kpi"><small>Ve městě</small><strong>${formatKm(result.urbanKm)} · ${formatPct(result.urbanPct)}</strong></div>
+        <div class="kpi"><small>Mimo město</small><strong>${formatKm(result.ruralKm)} · ${formatPct(result.ruralPct)}</strong></div>
+        <div class="kpi"><small>Dálnice + rychlostní</small><strong>${formatKm(result.fastRoadKm)} · ${formatPct(result.fastRoadPct)}</strong></div>
+        <div class="kpi"><small>Ostatní silnice</small><strong>${formatKm(result.otherRoadKm)} · ${formatPct(result.otherRoadPct)}</strong></div>
+      `;
+    }
+
+    function renderLegend() {
+      legendEl.innerHTML = `
+        <div class="legend-row"><span class="legend-color" style="background:${COLOR_URBAN}"></span> Ve městě</div>
+        <div class="legend-row"><span class="legend-color" style="background:${COLOR_RURAL}"></span> Mimo město</div>
+        <div class="legend-row"><span class="legend-color" style="background:${COLOR_FAST}"></span> Dálnice + rychlostní</div>
+        <div class="legend-row"><span class="legend-color" style="background:${COLOR_OTHER}"></span> Ostatní silnice</div>
+        <div class="legend-row">Na mapě je každý úsek vykreslený dvakrát: silnější čára = město/mimo město, tenčí horní čára = D+R vs ostatní.</div>
+      `;
+    }
+
+    function ensureMap() {
+      if (state.map) return;
+      state.map = L.map('map', { preferCanvas: true }).setView([49.8, 15.5], 7);
+      attachTileLayer();
+    }
+
+    function attachTileLayer() {
+      if (!state.map) return;
+      if (state.tileLayer) {
+        state.map.removeLayer(state.tileLayer);
+        state.tileLayer = null;
+      }
+      const src = TILE_SOURCES[state.tileLayerIndex];
+      state.tileErrorCount = 0;
+      state.tileLayer = L.tileLayer(src.url, src.options).addTo(state.map);
+      state.tileLayer.on('tileerror', () => {
+        state.tileErrorCount += 1;
+        if (state.tileErrorCount < 6) return;
+        if (state.tileLayerIndex < TILE_SOURCES.length - 1) {
+          state.tileLayerIndex += 1;
+          addMessage('warn', `Mapový podklad ${src.name} selhal (např. 403). Přepínám na ${TILE_SOURCES[state.tileLayerIndex].name}.`);
+          attachTileLayer();
+          return;
+        }
+        addMessage('warn', 'Mapový podklad je blokovaný (403). Trasa zůstává zobrazená bez podkladu.');
+        state.map.removeLayer(state.tileLayer);
+        state.tileLayer = null;
+      });
+    }
+
+    function destroyMapLayers() {
+      if (!state.map) return;
+      state.mapLayers.forEach((layer) => state.map.removeLayer(layer));
+      state.mapLayers = [];
+    }
+
+    function drawSegmentsOnMap(result) {
+      destroyMapLayers();
+      const bounds = [];
+
+      result.segments.forEach((s) => {
+        const latlngs = [[s.a.lat, s.a.lon], [s.b.lat, s.b.lon]];
+        const baseColor = s.isUrban ? COLOR_URBAN : COLOR_RURAL;
+        const topColor = s.isFastRoad ? COLOR_FAST : COLOR_OTHER;
+
+        const baseLayer = L.polyline(latlngs, { color: baseColor, weight: 7, opacity: 0.85 });
+        const topLayer = L.polyline(latlngs, { color: topColor, weight: 3, opacity: 1 });
+
+        const popup = `
+          <strong>Úsek:</strong> ${formatKm(s.lengthKm)}<br>
+          <strong>Sídla:</strong> ${s.isUrban ? 'Ve městě' : 'Mimo město'}<br>
+          <strong>Silnice:</strong> ${s.isFastRoad ? 'Dálnice/rychlostní' : 'Ostatní'}
+        `;
+
+        baseLayer.bindPopup(popup);
+        topLayer.bindPopup(popup);
+
+        baseLayer.addTo(state.map);
+        topLayer.addTo(state.map);
+        state.mapLayers.push(baseLayer, topLayer);
+
+        bounds.push([s.a.lat, s.a.lon], [s.b.lat, s.b.lon]);
+      });
+
+      if (bounds.length) {
+        state.map.fitBounds(bounds, { padding: [20, 20] });
+      }
     }
 
     function haversineKm(a, b) {
@@ -1040,7 +1300,8 @@
       crypto.getRandomValues(arr);
       return Array.from(arr).map((x) => x.toString(36)).join('');
     }
+
+    renderTabs();
   </script>
 </body>
 </html>
-
