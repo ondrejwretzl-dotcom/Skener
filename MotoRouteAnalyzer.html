@@ -775,7 +775,7 @@
 
         try {
           const resolvedUrl = await resolveMapyShareUrl(link);
-          const coords = parseCoordsFromMapyUrl(resolvedUrl);
+          const coords = await extractCoordsFromMapyLink(resolvedUrl);
           if (coords.length < 2) {
             throw new Error('V odkazu se nepodařilo najít trasu. Zkus dlouhý odkaz z plánování trasy.');
           }
@@ -844,15 +844,22 @@
       }
     }
 
+    function normalizeUrlInput(inputUrl) {
+      const raw = String(inputUrl || '').trim();
+      if (!raw) return raw;
+      if (/^https?:\/\//i.test(raw)) return raw;
+      return `https://${raw}`;
+    }
+
     async function resolveMapyShareUrl(inputUrl) {
       let url;
       try {
-        url = new URL(inputUrl);
+        url = new URL(normalizeUrlInput(inputUrl));
       } catch {
         throw new Error('Odkaz není validní URL.');
       }
 
-      if (!/(^|\\.)mapy\.(com|cz)$/i.test(url.hostname)) {
+      if (!/(^|\.)mapy\.(com|cz)$/i.test(url.hostname)) {
         throw new Error('Podporovaný je pouze odkaz z mapy.com / mapy.cz.');
       }
 
@@ -874,6 +881,16 @@
       } catch {}
 
       throw new Error('Krátký odkaz se nepodařilo rozbalit. Otevři ho prosím a vlož dlouhý odkaz.');
+    }
+
+    async function extractCoordsFromMapyLink(url) {
+      const direct = parseCoordsFromMapyUrl(url);
+      if (direct.length >= 2) return direct;
+
+      const fallback = await fetchCoordsFromMapyPage(url);
+      if (fallback.length >= 2) return fallback;
+
+      return [];
     }
 
     function parseCoordsFromMapyUrl(rawUrl) {
@@ -909,6 +926,62 @@
           dedup.push(p);
         }
       }
+      return dedup;
+    }
+
+    async function fetchCoordsFromMapyPage(url) {
+      try {
+        const pageMirrorUrl = `https://r.jina.ai/http://${new URL(url).host}${new URL(url).pathname}${new URL(url).search}`;
+        const res = await fetch(pageMirrorUrl);
+        const text = await res.text();
+        return parseCoordsFromText(text);
+      } catch {
+        return [];
+      }
+    }
+
+    function parseCoordsFromText(text) {
+      const coords = [];
+
+      const pushCoord = (latRaw, lonRaw, lonLatOrder = false) => {
+        const a = Number.parseFloat(latRaw);
+        const b = Number.parseFloat(lonRaw);
+        if (!Number.isFinite(a) || !Number.isFinite(b)) return;
+
+        let lat = a;
+        let lon = b;
+        if (lonLatOrder) {
+          lon = a;
+          lat = b;
+        }
+        if (Math.abs(lat) > 90 || Math.abs(lon) > 180) return;
+        coords.push({ lat, lon });
+      };
+
+      const latLonRegex = /"lat"\s*:\s*(-?\d{1,3}(?:\.\d+)?)\s*,\s*"lon"\s*:\s*(-?\d{1,3}(?:\.\d+)?)/g;
+      let m;
+      while ((m = latLonRegex.exec(text)) !== null) {
+        pushCoord(m[1], m[2], false);
+      }
+
+      const lonLatRegex = /"lon"\s*:\s*(-?\d{1,3}(?:\.\d+)?)\s*,\s*"lat"\s*:\s*(-?\d{1,3}(?:\.\d+)?)/g;
+      while ((m = lonLatRegex.exec(text)) !== null) {
+        pushCoord(m[1], m[2], true);
+      }
+
+      if (coords.length < 2) {
+        const arrayLonLatRegex = /\[\s*(-?\d{1,3}(?:\.\d+)?)\s*,\s*(-?\d{1,3}(?:\.\d+)?)\s*\]/g;
+        while ((m = arrayLonLatRegex.exec(text)) !== null) {
+          pushCoord(m[1], m[2], true);
+        }
+      }
+
+      const dedup = [];
+      for (const p of coords) {
+        const prev = dedup[dedup.length - 1];
+        if (!prev || prev.lat !== p.lat || prev.lon !== p.lon) dedup.push(p);
+      }
+
       return dedup;
     }
 
