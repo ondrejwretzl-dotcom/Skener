@@ -238,6 +238,18 @@
     .status-badge.error { background: #fee2e2; color: #b91c1c; }
 
     .status-meta { color: var(--muted); font-size: 0.88rem; line-height: 1.4; }
+    .status-actions { margin-top: 6px; }
+    .status-retry-btn {
+      border: 1px solid #fecaca;
+      background: #fff1f2;
+      color: #b91c1c;
+      border-radius: 999px;
+      font: inherit;
+      font-size: 0.82rem;
+      font-weight: 700;
+      padding: 5px 10px;
+      cursor: pointer;
+    }
 
     .tabs {
       display: flex;
@@ -395,7 +407,7 @@
   <div class="page">
     <section class="hero">
       <h1 class="title">Analyzátor tras GPX v3</h1>
-      <p class="subtitle">Fáze 1: rychlá analýza město/mimo město + samostatné tlačítko na rozdělení dálnice/rychlostní vs ostatní. Fáze 2: samostatná záložka s mapou a souhrny v kilometrech i procentech.</p>
+      <p class="subtitle">Rychlá a odolná analýza GPX: město/mimo město + volitelně dálnice/rychlostní vs ostatní. Chyby API se neopakují automaticky, opakování spouštíš ručně.</p>
     </section>
 
     <section class="layout">
@@ -412,7 +424,7 @@
           <input id="fileInput" type="file" accept=".gpx,application/gpx+xml,application/xml,text/xml" multiple class="hidden" />
         </div>
 
-        <p class="quick-note">Výchozí režim je rychlý: nejprve se zobrazí město vs mimo město. Rozdělení dálnice/rychlostní vs ostatní se zapíná zvláštním tlačítkem.</p>
+        <p class="quick-note">Výchozí režim je rychlý: nejprve město vs mimo město. Rozdělení dálnice/rychlostní vs ostatní zapni zvláštním tlačítkem. Při chybě 504 použij ruční „Zkusit znovu“.</p>
 
         <div class="info-grid">
           <div class="chip"><small>API</small>Overpass API</div>
@@ -461,7 +473,8 @@
   <script>
     const OVERPASS_ENDPOINT = 'https://overpass-api.de/api/interpreter';
     const MAX_FILE_SIZE_MB = 12;
-    const HIGHWAY_REGEX = '^(motorway|motorway_link|trunk|trunk_link|primary|primary_link|secondary|secondary_link|tertiary|tertiary_link|unclassified|residential|service|living_street|road|track)$';
+    const FAST_HIGHWAY_REGEX = '^(motorway|motorway_link|trunk|trunk_link)$';
+    const URBAN_HIGHWAY_REGEX = '^(residential|service|living_street)$';
     const SETTLEMENT_LANDUSE_REGEX = '^(residential|commercial|industrial|retail|garages)$';
     const PLACE_REGEX = '^(city|town|village|suburb|neighbourhood|quarter|hamlet)$';
     const ROAD_MATCH_THRESHOLD_METERS = 90;
@@ -470,6 +483,18 @@
     const COLOR_RURAL = '#22c55e';
     const COLOR_FAST = '#2563eb';
     const COLOR_OTHER = '#64748b';
+    const TILE_SOURCES = [
+      {
+        name: 'OpenStreetMap',
+        url: 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
+        options: { maxZoom: 19, attribution: '&copy; OpenStreetMap contributors' }
+      },
+      {
+        name: 'Carto Light',
+        url: 'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png',
+        options: { maxZoom: 20, attribution: '&copy; OpenStreetMap contributors &copy; CARTO' }
+      }
+    ];
 
     const state = {
       files: [],
@@ -478,7 +503,10 @@
       activeTab: 'results',
       selectedTrackId: null,
       map: null,
-      mapLayers: []
+      mapLayers: [],
+      tileLayerIndex: 0,
+      tileErrorCount: 0,
+      tileLayer: null
     };
 
     const fileInput = document.getElementById('fileInput');
@@ -498,6 +526,14 @@
     const mapPlaceholderEl = document.getElementById('mapPlaceholder');
     const mapSummaryEl = document.getElementById('mapSummary');
     const legendEl = document.getElementById('legend');
+
+    statusListEl.addEventListener('click', async (e) => {
+      const retryBtn = e.target.closest('[data-retry-id]');
+      if (!retryBtn) return;
+      const entry = state.files.find((f) => f.id === retryBtn.dataset.retryId);
+      if (!entry || !entry.coords?.length) return;
+      await reanalyzeEntry(entry);
+    });
 
     pickBtn.addEventListener('click', () => fileInput.click());
     fileInput.addEventListener('change', (e) => handleFiles(e.target.files));
@@ -544,6 +580,7 @@
       state.messages = [];
       state.splitMode = false;
       state.selectedTrackId = null;
+      state.tileLayerIndex = 0;
       fileInput.value = '';
       splitBtn.disabled = true;
       splitBtn.textContent = 'Rozdělit D+R vs ostatní';
@@ -586,12 +623,16 @@
         const item = document.createElement('div');
         item.className = 'status-item';
         const label = fileEntry.status === 'ready' ? 'Hotovo' : fileEntry.status === 'processing' ? 'Zpracování' : 'Chyba';
+        const retryHtml = fileEntry.status === 'error' && fileEntry.coords?.length
+          ? `<div class="status-actions"><button type="button" class="status-retry-btn" data-retry-id="${escapeHtml(fileEntry.id)}">Zkusit znovu ručně</button></div>`
+          : '';
         item.innerHTML = `
           <div class="status-head">
             <div class="status-name">${escapeHtml(fileEntry.name)}</div>
             <div class="status-badge ${fileEntry.status}">${label}</div>
           </div>
           <div class="status-meta">${escapeHtml(fileEntry.meta || '')}</div>
+          ${retryHtml}
         `;
         statusListEl.appendChild(item);
       });
@@ -623,6 +664,8 @@
           id: `${file.name}-${file.size}-${cryptoRandomString()}`,
           name: file.name,
           size: file.size,
+          sourceFile: file,
+          coords: null,
           status: 'processing',
           meta: 'Čtu soubor…',
           result: null
@@ -635,6 +678,7 @@
         try {
           const text = await readFileAsText(file);
           const coords = parseGpx(text);
+          entry.coords = coords;
           entry.meta = `Načteno ${coords.length.toLocaleString('cs-CZ')} bodů. Připravuji analýzu…`;
           renderStatuses();
 
@@ -671,6 +715,28 @@
       }
 
       updateTrackSelect();
+      renderMapTab();
+    }
+
+    async function reanalyzeEntry(entry) {
+      entry.status = 'processing';
+      entry.meta = 'Ruční opakování analýzy…';
+      entry.result = null;
+      renderStatuses();
+      renderTable();
+      try {
+        entry.result = await analyzeTrack(entry.coords, entry.name, (meta) => {
+          entry.meta = meta;
+          renderStatuses();
+        });
+        entry.status = 'ready';
+        entry.meta = `Hotovo. ${formatKm(entry.result.totalKm)} · město ${formatKm(entry.result.urbanKm)} · mimo ${formatKm(entry.result.ruralKm)}`;
+      } catch (error) {
+        entry.status = 'error';
+        entry.meta = normalizeError(error);
+      }
+      renderStatuses();
+      renderTable();
       renderMapTab();
     }
 
@@ -736,12 +802,9 @@
       onProgress('Připravuji koridor pro Overpass dotazy…');
       const bboxes = buildCorridorBboxes(coords);
       const fetched = await fetchOverpassData(bboxes, onProgress);
-      const roads = fetched.roads;
+      const fastRoads = fetched.fastRoads;
+      const urbanRoads = fetched.urbanRoads;
       const polygons = fetched.polygons;
-
-      if (!roads.length) {
-        throw new Error('V okolí trasy se nepodařilo načíst žádné silnice z Overpass API.');
-      }
 
       onProgress('Přiřazuji segmentům město/mimo město a D+R…');
       let urbanKm = 0;
@@ -752,18 +815,16 @@
       const segmentRows = [];
 
       for (const segment of segments) {
-        const matchedRoad = findNearestRoad(segment.midpoint, roads);
-        const roadClass = normalizeHighwayClass(matchedRoad?.tags?.highway);
-        const validRoadMatch = matchedRoad && matchedRoad.distanceMeters <= ROAD_MATCH_THRESHOLD_METERS;
-
         const inBuiltUpArea = polygons.some((polygon) => pointInPolygon(segment.midpoint, polygon));
-        const urbanByRoad = isUrbanRoad(matchedRoad?.tags, roadClass.key);
+        const matchedUrbanRoad = findNearestRoad(segment.midpoint, urbanRoads);
+        const urbanByRoad = Boolean(matchedUrbanRoad && matchedUrbanRoad.distanceMeters <= ROAD_MATCH_THRESHOLD_METERS);
         const isUrban = inBuiltUpArea || urbanByRoad;
 
         if (isUrban) urbanKm += segment.lengthKm;
         else ruralKm += segment.lengthKm;
 
-        const isFastRoad = validRoadMatch && (roadClass.key === 'motorway' || roadClass.key === 'trunk');
+        const matchedFastRoad = findNearestRoad(segment.midpoint, fastRoads);
+        const isFastRoad = Boolean(matchedFastRoad && matchedFastRoad.distanceMeters <= ROAD_MATCH_THRESHOLD_METERS);
         if (isFastRoad) fastRoadKm += segment.lengthKm;
         else otherRoadKm += segment.lengthKm;
 
@@ -791,7 +852,8 @@
         otherRoadPct: totalKm > 0 ? (otherRoadKm / totalKm) * 100 : 0,
         segments: segmentRows,
         debug: {
-          fetchedRoadCount: roads.length,
+          fetchedFastRoadCount: fastRoads.length,
+          fetchedUrbanRoadCount: urbanRoads.length,
           fetchedPolygonCount: polygons.length,
           fetchedBboxes: bboxes.length
         }
@@ -816,8 +878,8 @@
     }
 
     function buildCorridorBboxes(coords) {
-      const chunkDistanceKm = 18;
-      const padDeg = 0.007;
+      const chunkDistanceKm = 12;
+      const padDeg = 0.005;
       const boxes = [];
 
       let startIndex = 0;
@@ -873,7 +935,8 @@
     }
 
     async function fetchOverpassData(bboxes, onProgress) {
-      const roadsById = new Map();
+      const fastRoadsById = new Map();
+      const urbanRoadsById = new Map();
       const polygonsById = new Map();
 
       for (let i = 0; i < bboxes.length; i++) {
@@ -887,7 +950,10 @@
         });
 
         if (!response.ok) {
-          throw new Error(`Overpass API vrátilo chybu ${response.status}. Zkus to prosím za chvíli znovu.`);
+          if (response.status === 504) {
+            throw new Error('Overpass API je přetížené (504). Klikni na „Zkusit znovu ručně“ u trasy.');
+          }
+          throw new Error(`Overpass API vrátilo chybu ${response.status}. Klikni na „Zkusit znovu ručně“.`);
         }
 
         const data = await response.json();
@@ -901,12 +967,19 @@
           const tags = element.tags || {};
 
           if (tags.highway) {
-            roadsById.set(key, {
+            const roadData = {
               id: key,
               tags,
               geometry: element.geometry.map((g) => ({ lat: g.lat, lon: g.lon })),
               bbox: lineBBox(element.geometry)
-            });
+            };
+            const highway = String(tags.highway || '');
+            if (/^motorway(_link)?$/.test(highway) || /^trunk(_link)?$/.test(highway)) {
+              fastRoadsById.set(key, roadData);
+            }
+            if (/^(residential|service|living_street)$/.test(highway)) {
+              urbanRoadsById.set(key, roadData);
+            }
           }
 
           const isPolygonCandidate = isClosedWay(element.geometry) && (tags.landuse || tags.place);
@@ -916,7 +989,11 @@
         }
       }
 
-      return { roads: Array.from(roadsById.values()), polygons: Array.from(polygonsById.values()) };
+      return {
+        fastRoads: Array.from(fastRoadsById.values()),
+        urbanRoads: Array.from(urbanRoadsById.values()),
+        polygons: Array.from(polygonsById.values())
+      };
     }
 
     function buildOverpassQuery(bbox) {
@@ -927,7 +1004,7 @@
       return `
         [out:json][timeout:25];
         (
-          way["highway"~"${HIGHWAY_REGEX}"]["area"!="yes"](${s},${w},${n},${e});
+          way["highway"~"${FAST_HIGHWAY_REGEX}|${URBAN_HIGHWAY_REGEX}"]["area"!="yes"](${s},${w},${n},${e});
           way["landuse"~"${SETTLEMENT_LANDUSE_REGEX}"](${s},${w},${n},${e});
           way["place"~"${PLACE_REGEX}"](${s},${w},${n},${e});
         );
@@ -1010,37 +1087,6 @@
       return inside;
     }
 
-    function isUrbanRoad(tags = {}, classKey) {
-      const urbanClasses = new Set(['residential', 'service', 'living_street']);
-      if (urbanClasses.has(classKey)) return true;
-
-      const maxspeed = parseMaxspeed(tags.maxspeed || tags['source:maxspeed'] || '');
-      if (Number.isFinite(maxspeed) && maxspeed <= 60) return true;
-      return false;
-    }
-
-    function parseMaxspeed(value) {
-      if (!value) return NaN;
-      const match = String(value).match(/(\d{1,3})/);
-      return match ? Number.parseFloat(match[1]) : NaN;
-    }
-
-    function normalizeHighwayClass(highwayValue) {
-      const value = String(highwayValue || '').trim();
-      if (value.startsWith('motorway')) return { key: 'motorway' };
-      if (value.startsWith('trunk')) return { key: 'trunk' };
-      if (value.startsWith('primary')) return { key: 'primary' };
-      if (value.startsWith('secondary')) return { key: 'secondary' };
-      if (value.startsWith('tertiary')) return { key: 'tertiary' };
-      if (value === 'unclassified') return { key: 'unclassified' };
-      if (value === 'residential') return { key: 'residential' };
-      if (value === 'service') return { key: 'service' };
-      if (value === 'living_street') return { key: 'living_street' };
-      if (value === 'road') return { key: 'road' };
-      if (value === 'track') return { key: 'track' };
-      return { key: 'unknown' };
-    }
-
     function renderTable() {
       const readyEntries = state.files.filter((x) => x.status === 'ready' && x.result);
       const readyResults = readyEntries.map((x) => x.result);
@@ -1057,11 +1103,7 @@
       const rows = [
         { section: 'Souhrn', label: 'Celková délka', sub: 'Součet všech segmentů tracku', formatter: (r) => formatKm(r.totalKm) },
         { section: 'Město vs mimo město', label: 'Ve městě', sub: 'Zastavěná plocha nebo městská silnice', formatter: (r) => `${formatKm(r.urbanKm)} · ${formatPct(r.urbanPct)}` },
-        { section: 'Město vs mimo město', label: 'Mimo město', sub: 'Mimo zastavěné plochy', formatter: (r) => `${formatKm(r.ruralKm)} · ${formatPct(r.ruralPct)}` },
-        { section: 'Technické', label: 'Track body', sub: 'Počet bodů v GPX', formatter: (r) => r.pointCount.toLocaleString('cs-CZ') },
-        { section: 'Technické', label: 'Segmenty', sub: 'Počet analyzovaných úseků', formatter: (r) => r.segmentCount.toLocaleString('cs-CZ') },
-        { section: 'Technické', label: 'Načtené silnice', sub: 'Počet OSM way segmentů z Overpass', formatter: (r) => r.debug.fetchedRoadCount.toLocaleString('cs-CZ') },
-        { section: 'Technické', label: 'Načtené plochy sídel', sub: 'Počet polygonů landuse/place', formatter: (r) => r.debug.fetchedPolygonCount.toLocaleString('cs-CZ') }
+        { section: 'Město vs mimo město', label: 'Mimo město', sub: 'Mimo zastavěné plochy', formatter: (r) => `${formatKm(r.ruralKm)} · ${formatPct(r.ruralPct)}` }
       ];
 
       if (state.splitMode) {
@@ -1159,10 +1201,31 @@
     function ensureMap() {
       if (state.map) return;
       state.map = L.map('map', { preferCanvas: true }).setView([49.8, 15.5], 7);
-      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-        maxZoom: 19,
-        attribution: '&copy; OpenStreetMap contributors'
-      }).addTo(state.map);
+      attachTileLayer();
+    }
+
+    function attachTileLayer() {
+      if (!state.map) return;
+      if (state.tileLayer) {
+        state.map.removeLayer(state.tileLayer);
+        state.tileLayer = null;
+      }
+      const src = TILE_SOURCES[state.tileLayerIndex];
+      state.tileErrorCount = 0;
+      state.tileLayer = L.tileLayer(src.url, src.options).addTo(state.map);
+      state.tileLayer.on('tileerror', () => {
+        state.tileErrorCount += 1;
+        if (state.tileErrorCount < 6) return;
+        if (state.tileLayerIndex < TILE_SOURCES.length - 1) {
+          state.tileLayerIndex += 1;
+          addMessage('warn', `Mapový podklad ${src.name} selhal (např. 403). Přepínám na ${TILE_SOURCES[state.tileLayerIndex].name}.`);
+          attachTileLayer();
+          return;
+        }
+        addMessage('warn', 'Mapový podklad je blokovaný (403). Trasa zůstává zobrazená bez podkladu.');
+        state.map.removeLayer(state.tileLayer);
+        state.tileLayer = null;
+      });
     }
 
     function destroyMapLayers() {
