@@ -163,6 +163,23 @@
       line-height: 1.4;
     }
 
+    .link-input-wrap {
+      margin-top: 12px;
+      display: grid;
+      gap: 8px;
+    }
+
+    .link-input {
+      width: 100%;
+      min-height: 88px;
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      padding: 10px 12px;
+      font: inherit;
+      resize: vertical;
+      background: #fcfeff;
+    }
+
     .info-grid {
       display: grid;
       grid-template-columns: repeat(1, minmax(0, 1fr));
@@ -424,6 +441,14 @@
           <input id="fileInput" type="file" accept=".gpx,application/gpx+xml,application/xml,text/xml" multiple class="hidden" />
         </div>
 
+        <div class="link-input-wrap">
+          <label for="linkInput"><strong>nebo vlož odkaz na trasu z Mapy.com</strong></label>
+          <textarea id="linkInput" class="link-input" placeholder="https://mapy.com/s/xxxxx&#10;nebo dlouhý odkaz z plánování trasy"></textarea>
+          <div class="actions">
+            <button class="btn btn-ghost" type="button" id="analyzeLinkBtn">Analyzovat odkaz</button>
+          </div>
+        </div>
+
         <p class="quick-note">Výchozí režim je rychlý: nejprve město vs mimo město. Rozdělení dálnice/rychlostní vs ostatní zapni zvláštním tlačítkem. Při chybě 504 použij ruční „Zkusit znovu“.</p>
 
         <div class="info-grid">
@@ -513,6 +538,8 @@
     const pickBtn = document.getElementById('pickBtn');
     const clearBtn = document.getElementById('clearBtn');
     const splitBtn = document.getElementById('splitBtn');
+    const analyzeLinkBtn = document.getElementById('analyzeLinkBtn');
+    const linkInputEl = document.getElementById('linkInput');
     const dropzone = document.getElementById('dropzone');
     const messagesEl = document.getElementById('messages');
     const statusListEl = document.getElementById('statusList');
@@ -537,6 +564,7 @@
 
     pickBtn.addEventListener('click', () => fileInput.click());
     fileInput.addEventListener('change', (e) => handleFiles(e.target.files));
+    analyzeLinkBtn.addEventListener('click', () => handleLinksInput(linkInputEl.value));
     clearBtn.addEventListener('click', clearAll);
     splitBtn.addEventListener('click', toggleSplitMode);
     trackSelectEl.addEventListener('change', (e) => {
@@ -582,6 +610,7 @@
       state.selectedTrackId = null;
       state.tileLayerIndex = 0;
       fileInput.value = '';
+      linkInputEl.value = '';
       splitBtn.disabled = true;
       splitBtn.textContent = 'Rozdělit D+R vs ostatní';
       renderMessages();
@@ -718,6 +747,71 @@
       renderMapTab();
     }
 
+    async function handleLinksInput(rawText) {
+      const links = String(rawText || '')
+        .split(/\r?\n/)
+        .map((x) => x.trim())
+        .filter(Boolean);
+
+      if (!links.length) {
+        addMessage('warn', 'Nejprve vlož alespoň jeden odkaz na trasu.');
+        return;
+      }
+
+      for (const link of links) {
+        const entry = {
+          id: `link-${cryptoRandomString()}`,
+          name: makeLinkDisplayName(link),
+          size: 0,
+          sourceFile: null,
+          coords: null,
+          status: 'processing',
+          meta: 'Zpracovávám odkaz…',
+          result: null
+        };
+        state.files.push(entry);
+        renderStatuses();
+        renderTable();
+
+        try {
+          const resolvedUrl = await resolveMapyShareUrl(link);
+          const coords = parseCoordsFromMapyUrl(resolvedUrl);
+          if (coords.length < 2) {
+            throw new Error('V odkazu se nepodařilo najít trasu. Zkus dlouhý odkaz z plánování trasy.');
+          }
+          if (!state.messages.some((m) => m.text.includes('Odkaz z Mapy.com'))) {
+            addMessage('warn', 'Odkaz z Mapy.com nemusí obsahovat úplnou geometrii trasy. Výsledek je orientační.');
+          }
+
+          entry.coords = densifyCoords(coords, 0.35);
+          entry.meta = `Odkaz načten. ${entry.coords.length.toLocaleString('cs-CZ')} bodů. Spouštím analýzu…`;
+          renderStatuses();
+
+          entry.result = await analyzeTrack(entry.coords, entry.name, (meta) => {
+            entry.meta = meta;
+            renderStatuses();
+          });
+
+          entry.status = 'ready';
+          entry.meta = `Hotovo. ${formatKm(entry.result.totalKm)} · město ${formatKm(entry.result.urbanKm)} · mimo ${formatKm(entry.result.ruralKm)}`;
+        } catch (error) {
+          entry.status = 'error';
+          entry.meta = normalizeError(error);
+        }
+
+        renderStatuses();
+        renderTable();
+      }
+
+      splitBtn.disabled = !state.files.some((x) => x.status === 'ready');
+      if (!state.selectedTrackId) {
+        const firstReady = state.files.find((f) => f.status === 'ready');
+        state.selectedTrackId = firstReady?.id || null;
+      }
+      updateTrackSelect();
+      renderMapTab();
+    }
+
     async function reanalyzeEntry(entry) {
       entry.status = 'processing';
       entry.meta = 'Ruční opakování analýzy…';
@@ -738,6 +832,107 @@
       renderStatuses();
       renderTable();
       renderMapTab();
+    }
+
+    function makeLinkDisplayName(url) {
+      try {
+        const u = new URL(url);
+        const shortPath = u.pathname.length > 28 ? `${u.pathname.slice(0, 28)}…` : u.pathname;
+        return `odkaz:${u.hostname}${shortPath}`;
+      } catch {
+        return 'odkaz:neplatný';
+      }
+    }
+
+    async function resolveMapyShareUrl(inputUrl) {
+      let url;
+      try {
+        url = new URL(inputUrl);
+      } catch {
+        throw new Error('Odkaz není validní URL.');
+      }
+
+      if (!/(^|\\.)mapy\.(com|cz)$/i.test(url.hostname)) {
+        throw new Error('Podporovaný je pouze odkaz z mapy.com / mapy.cz.');
+      }
+
+      if (!/^\/s\//.test(url.pathname)) {
+        return url.toString();
+      }
+
+      try {
+        const res = await fetch(url.toString(), { method: 'GET', redirect: 'follow' });
+        if (res.url && res.url !== url.toString()) return res.url;
+      } catch {}
+
+      try {
+        const mirror = `https://r.jina.ai/http://${url.host}${url.pathname}${url.search}`;
+        const res = await fetch(mirror);
+        const text = await res.text();
+        const sourceMatch = text.match(/URL Source:\s*(https?:\/\/\S+)/i);
+        if (sourceMatch?.[1]) return sourceMatch[1].trim();
+      } catch {}
+
+      throw new Error('Krátký odkaz se nepodařilo rozbalit. Otevři ho prosím a vlož dlouhý odkaz.');
+    }
+
+    function parseCoordsFromMapyUrl(rawUrl) {
+      let decoded = String(rawUrl || '');
+      try { decoded = decodeURIComponent(decoded); } catch {}
+
+      const candidates = [];
+      const addPair = (a, b) => {
+        const one = Number.parseFloat(a);
+        const two = Number.parseFloat(b);
+        if (!Number.isFinite(one) || !Number.isFinite(two)) return;
+
+        let lat = one;
+        let lon = two;
+        if (Math.abs(one) > 90 && Math.abs(two) <= 90) {
+          lon = one;
+          lat = two;
+        }
+        if (Math.abs(lat) > 90 || Math.abs(lon) > 180) return;
+        candidates.push({ lat, lon });
+      };
+
+      const regex = /(-?\d{1,3}(?:\.\d+)?),\s*(-?\d{1,3}(?:\.\d+)?)/g;
+      let m;
+      while ((m = regex.exec(decoded)) !== null) {
+        addPair(m[1], m[2]);
+      }
+
+      const dedup = [];
+      for (const p of candidates) {
+        const prev = dedup[dedup.length - 1];
+        if (!prev || prev.lat !== p.lat || prev.lon !== p.lon) {
+          dedup.push(p);
+        }
+      }
+      return dedup;
+    }
+
+    function densifyCoords(coords, maxSegmentKm) {
+      if (coords.length < 2) return coords;
+      const out = [coords[0]];
+      for (let i = 1; i < coords.length; i++) {
+        const a = out[out.length - 1];
+        const b = coords[i];
+        const d = haversineKm(a, b);
+        if (d <= maxSegmentKm) {
+          out.push(b);
+          continue;
+        }
+        const steps = Math.ceil(d / maxSegmentKm);
+        for (let step = 1; step <= steps; step++) {
+          const t = step / steps;
+          out.push({
+            lat: a.lat + (b.lat - a.lat) * t,
+            lon: a.lon + (b.lon - a.lon) * t
+          });
+        }
+      }
+      return out;
     }
 
     function readFileAsText(file) {
