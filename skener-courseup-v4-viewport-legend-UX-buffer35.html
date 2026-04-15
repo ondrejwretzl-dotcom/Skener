@@ -29,6 +29,7 @@
     #loadingText{ margin-top:8px; color:#444; }
 
     #log{ position:absolute; left:0; bottom:0; width:100%; height:10vh; overflow-y:auto; background:var(--ui-bg); padding:5px; font-size:10px; box-shadow:0 -1px 0 #ccc inset; z-index:10; }
+    #log .log-error{ color:#b42318; font-weight:700; }
 
     /* ===== POI PIN (SVG) ===== */
     .poi-pin{ width:26px; height:26px; display:block; filter:drop-shadow(0 1px 3px rgba(0,0,0,.45)); cursor:pointer; }
@@ -164,7 +165,7 @@ const sheetTitle=document.getElementById('sheetTitle');
 const sheetBtns=document.getElementById('sheetBtns');
 let currentPoi=null; let currentUtter=null; let isPaused=false;
 
-function log(m){ const d=document.createElement('div'); d.textContent=`${new Date().toLocaleTimeString()} ${m}`; logDiv.prepend(d) }
+function log(m, level='info'){ const d=document.createElement('div'); d.textContent=`${new Date().toLocaleTimeString()} ${m}`; if(level==='error') d.classList.add('log-error'); logDiv.prepend(d) }
 function setLoading(s){ isLoading=s; loadingEl.style.display=s?'flex':'none' }
 
 // HELPERS
@@ -194,16 +195,17 @@ function initMap(lat,lon){ if(mapReady) return; map=new maplibregl.Map({containe
       try{ map.setLayoutProperty(l.id,'text-pitch-alignment','viewport'); }catch(e){}
       try{ map.setLayoutProperty(l.id,'icon-pitch-alignment','viewport'); }catch(e){}
     }});}catch(e){}
+    map.on('move', ()=>{ placeRiderToViewportCenter(); });
     map.on('moveend', ()=>{ if(moveEndTimer) clearTimeout(moveEndTimer); moveEndTimer=setTimeout(()=> scheduleViewportFetch(false,'moveend'), 250); });
-    map.on('dragstart', ()=>{ followUser=false; centerBtn.classList.remove('active'); });
     if(lastPosition){ updateRider(lastPosition.lat,lastPosition.lon,heading); scheduleViewportFetch(true,'first-load'); }
   });
 }
 
 // Rider
 function ensureRider(){ if(riderMarker) return riderMarker; const el=document.createElement('div'); el.className='rider'; el.innerHTML=`<svg class="arrow" viewBox="0 0 24 24"><path fill="#1976d2" d="M12 2l6.5 18.5L12 16l-6.5 4.5L12 2z"/></svg>`; riderMarker=new maplibregl.Marker({element:el, anchor:'bottom'}); return riderMarker; }
-function updateRider(lat,lon,head){ if(!Number.isFinite(lat)||!Number.isFinite(lon)||!map) return; ensureRider(); riderMarker.setLngLat([lon,lat]); if(!riderMarker._map) riderMarker.addTo(map); const refBr = (animTargetBearing!=null)? animTargetBearing : map.getBearing(); setArrowRotation(head, refBr); if(followUser){ map.easeTo({center:[lon,lat], duration:300}); centerBtn.classList.add('active'); } }
-centerBtn.addEventListener('click', ()=>{ followUser=true; centerBtn.classList.add('active'); if(lastPosition && map){ map.easeTo({center:[lastPosition.lon,lastPosition.lat], duration:350}); } });
+function placeRiderToViewportCenter(){ if(!map) return; ensureRider(); riderMarker.setLngLat(map.getCenter()); if(!riderMarker._map) riderMarker.addTo(map); }
+function updateRider(lat,lon,head){ if(!Number.isFinite(lat)||!Number.isFinite(lon)||!map) return; placeRiderToViewportCenter(); const refBr = (animTargetBearing!=null)? animTargetBearing : map.getBearing(); setArrowRotation(head, refBr); if(followUser){ map.easeTo({center:[lon,lat], duration:300}); centerBtn.classList.add('active'); placeRiderToViewportCenter(); } }
+centerBtn.addEventListener('click', ()=>{ followUser=true; centerBtn.classList.add('active'); if(lastPosition && map){ map.easeTo({center:[lastPosition.lon,lastPosition.lat], duration:350}); placeRiderToViewportCenter(); } });
 
 // POI RENDER (bližší POI výš)
 function clearCategory(cat){ (poiByCat[cat]||[]).forEach(o=>{ try{o.marker.remove()}catch(e){} try{o.popup.remove()}catch(e){} }); poiByCat[cat]=[] }
@@ -222,7 +224,7 @@ function playWiki(wikiTag){ if(currentUtter && isPaused){ resumeTTS(); return; }
 function handlePoiAction(p){ currentPoi=p; const hasWiki=!!p.wiki; const hasWeb=!!p.website; if(hasWiki && !hasWeb){ showSheet(p.name, [ {label:'▶︎ Přehrát', cl:'btn-primary', onClick:()=>playWiki(p.wiki)}, {label:'⏸︎ Pauza',  cl:'',           onClick:()=>pauseTTS()}, {label:'Zavřít',   cl:'btn-danger', onClick:()=>{ hideSheet(); stopTTS(); }} ]); } else if(!hasWiki && hasWeb){ showSheet(p.name, [ {label:'🌐 Otevřít', cl:'btn-success', onClick:()=>{ try{ window.open(p.website,'_blank','noopener'); }catch(e){} }}, {label:'Zavřít',     cl:'btn-danger',  onClick:()=>{ hideSheet(); }} ]); } else if(hasWiki && hasWeb){ showSheet(p.name, [ {label:'📘 Wiki – přehrát', cl:'btn-primary', onClick:()=>playWiki(p.wiki)}, {label:'🌐 Web – otevřít', cl:'btn-success', onClick:()=>{ try{ window.open(p.website,'_blank','noopener'); }catch(e){} }}, {label:'⏸︎ Pauza', cl:'', onClick:()=>pauseTTS()}, {label:'Zavřít', cl:'btn-danger', onClick:()=>{ hideSheet(); stopTTS(); }} ]); } }
 
 // ===== Overpass: Sjednocený dotaz + stručný log =====
-async function fetchWithRetry(url,opt,id,retries=2,delay=900){ let attempt = 0; const maxA = retries+1; const t0 = performance.now(); while(true){ attempt++; try{ if(id!==poiRequestId) throw new Error('CANCELLED'); const r = await fetch(url,opt); if(!r.ok) throw new Error('HTTP '+r.status); if(id!==poiRequestId) throw new Error('CANCELLED'); const data = await r.json(); log(`OK req=${id} in ${(performance.now()-t0).toFixed(0)}ms elems=${(data.elements||[]).length}`); return data; }catch(e){ if(e.message==='CANCELLED'){ log(`CANCEL req=${id}`); throw e; } if(attempt>=maxA){ log(`ERROR req=${id} ${e.message}`); throw e; } log(`RETRY req=${id} in ${delay}ms (${attempt}/${maxA})`); await new Promise(res=>setTimeout(res,delay)); } } }
+async function fetchWithRetry(url,opt,id,retries=2,delay=900){ let attempt = 0; const maxA = retries+1; const t0 = performance.now(); while(true){ attempt++; try{ if(id!==poiRequestId) throw new Error('CANCELLED'); const r = await fetch(url,opt); if(!r.ok) throw new Error('HTTP '+r.status); if(id!==poiRequestId) throw new Error('CANCELLED'); const data = await r.json(); log(`OK req=${id} in ${(performance.now()-t0).toFixed(0)}ms elems=${(data.elements||[]).length}`); return data; }catch(e){ if(e.message==='CANCELLED'){ log(`CANCEL req=${id}`); throw e; } if(attempt>=maxA){ log(`ERROR req=${id} ${e.message}`,'error'); throw e; } log(`RETRY req=${id} in ${delay}ms (${attempt}/${maxA})`,'error'); await new Promise(res=>setTimeout(res,delay)); } } }
 
 const queryParts = {
   toggleHistoric: `nwr[historic~"^(castle|ruins|chateau|fortress)$"]({{bbox}})(if:t["name"]);`,
@@ -267,7 +269,7 @@ function scheduleViewportFetch(force=false, reason='manual'){
 
 function classifyCategory(tags){ const t=tags||{}; if(t.historic && /^(castle|ruins|chateau|fortress)$/i.test(t.historic)) return 'toggleHistoric'; if(t['man_made']==='tower' && t['tower:type']==='observation') return 'toggleTowers'; if(t.natural==='peak' && (!t.ele || +t.ele>400)) return 'togglePeaks'; if(t.leisure==='nature_reserve') return 'toggleNature'; if(t.building && /(church|cathedral|basilica)/i.test(t.building)) return 'toggleChurches'; if(t.amenity==='fuel') return 'toggleFuel'; if(t.amenity && /(cafe|pub|bar|restaurant|food|biergarten)/i.test(t.amenity)) return 'toggleRestaurace'; return null; }
 
-function getPOIsViewport(expandedBBox){ if(!mapReady) return; poiRequestId++; const id=poiRequestId; inflight=0; setLoading(true); const cats = activeCats(); if(!cats.length){ Object.keys(poiByCat).forEach(clearCategory); setLoading(false); log('NO CATS'); return; } const bboxStr = bboxToStr(expandedBBox); const body = cats.map(cid => queryParts[cid].replace(/\{\{bbox\}\}/g, bboxStr)).join(''); const query = `[out:json][timeout:20];(${body});out center;`; fetchWithRetry('https://overpass-api.de/api/interpreter', {method:'POST', body:query}, id).then(data=>{ if(id!==poiRequestId) return; const ref = lastPosition || {lat: map.getCenter().lat, lon: map.getCenter().lng}; const grouped={}; cats.forEach(c=>grouped[c]=[]); (data.elements||[]).forEach(e=>{ const la=e.lat ?? e.center?.lat; const lo=e.lon ?? e.center?.lon; if(!Number.isFinite(la)||!Number.isFinite(lo)) return; const cat = classifyCategory(e.tags)||'__other'; if(!grouped[cat]) grouped[cat]=[]; const website = e.tags?.website || e.tags?.url || e.tags?.['contact:website'] || null; grouped[cat].push({ name:e.tags?.name || 'Neznámý', ele:e.tags?.ele || null, lat:la, lon:lo, distanceKm:getDistance(ref.lat,ref.lon,la,lo), wiki:e.tags?.wikipedia || '', website }); }); cats.forEach(c=> renderPOIsCategory(grouped[c]||[], c)); log(`RENDER cats=[${cats.join('|')}]`); }).catch(err=>{ if(err.message!=='CANCELLED') log('ERR '+err); }).finally(()=>{ inflight=0; setLoading(false); }); }
+function getPOIsViewport(expandedBBox){ if(!mapReady) return; poiRequestId++; const id=poiRequestId; inflight=0; setLoading(true); const cats = activeCats(); if(!cats.length){ Object.keys(poiByCat).forEach(clearCategory); setLoading(false); log('NO CATS'); return; } const bboxStr = bboxToStr(expandedBBox); const body = cats.map(cid => queryParts[cid].replace(/\{\{bbox\}\}/g, bboxStr)).join(''); const query = `[out:json][timeout:20];(${body});out center;`; fetchWithRetry('https://overpass-api.de/api/interpreter', {method:'POST', body:query}, id).then(data=>{ if(id!==poiRequestId) return; const ref = lastPosition || {lat: map.getCenter().lat, lon: map.getCenter().lng}; const grouped={}; cats.forEach(c=>grouped[c]=[]); (data.elements||[]).forEach(e=>{ const la=e.lat ?? e.center?.lat; const lo=e.lon ?? e.center?.lon; if(!Number.isFinite(la)||!Number.isFinite(lo)) return; const cat = classifyCategory(e.tags)||'__other'; if(!grouped[cat]) grouped[cat]=[]; const website = e.tags?.website || e.tags?.url || e.tags?.['contact:website'] || null; grouped[cat].push({ name:e.tags?.name || 'Neznámý', ele:e.tags?.ele || null, lat:la, lon:lo, distanceKm:getDistance(ref.lat,ref.lon,la,lo), wiki:e.tags?.wikipedia || '', website }); }); cats.forEach(c=> renderPOIsCategory(grouped[c]||[], c)); log(`RENDER cats=[${cats.join('|')}]`); }).catch(err=>{ if(err.message!=='CANCELLED') log('ERR '+err,'error'); }).finally(()=>{ inflight=0; setLoading(false); }); }
 
 // GEO – watchPosition
 let watchId=null;

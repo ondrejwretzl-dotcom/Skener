@@ -1,0 +1,359 @@
+<!DOCTYPE html>
+<html lang="cs">
+<head>
+  <meta charset="utf-8">
+  <title>Skener okolí – Explorer v5 (klik + vyhledávání + plynulé dočítání)</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
+  <link rel="icon" type="image/png" href="vokoli2.png">
+
+  <link href="https://unpkg.com/maplibre-gl@3.6.1/dist/maplibre-gl.css" rel="stylesheet" />
+  <script src="https://unpkg.com/maplibre-gl@3.6.1/dist/maplibre-gl.js"></script>
+
+  <style>
+    :root{ --ui-bg: rgba(255,255,255,.92); --ui-shadow: 0 1px 4px rgba(0,0,0,.3); }
+    *{ box-sizing:border-box; }
+    body{ margin:0; font-family: system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; background:#f0f4f7; color:#333; overflow:hidden; }
+    #map{ position:absolute; inset:0; }
+
+    #searchWrap{ position:absolute; top:8px; left:50%; transform:translateX(-50%); width:min(95vw, 680px); z-index:30; display:flex; gap:6px; background:var(--ui-bg); border-radius:12px; padding:8px; box-shadow:var(--ui-shadow); }
+    #searchInput{ flex:1; border:1px solid #d1d5db; border-radius:10px; padding:10px 12px; font-size:14px; }
+    #searchBtn{ border:0; border-radius:10px; background:#2563eb; color:#fff; padding:10px 14px; font-weight:700; cursor:pointer; }
+    #refreshApiBtn{ border:0; border-radius:10px; background:#b42318; color:#fff; padding:10px 12px; font-weight:700; cursor:pointer; display:none; }
+    #refreshApiBtn:disabled{ opacity:.45; cursor:not-allowed; }
+
+    #left-menu{ position:absolute; top:64px; left:8px; display:flex; flex-direction:column; gap:8px; z-index:10; }
+    .menu-icon{ width:38px; height:38px; background:var(--ui-bg); border-radius:50%; display:flex; align-items:center; justify-content:center; box-shadow:var(--ui-shadow); cursor:pointer; font-size:18px; }
+    .menu-icon.active{ background:#4285F4; color:#fff; }
+
+    #info{ position:absolute; right:8px; bottom:11vh; background:var(--ui-bg); padding:6px 10px; border-radius:10px; box-shadow:var(--ui-shadow); z-index:10; font-size:11px; max-width:330px; text-align:right; }
+
+    #loading{ position:absolute; left:50%; top:50%; transform:translate(-50%,-50%); z-index:20; display:none; flex-direction:column; align-items:center; background:rgba(255,255,255,.85); padding:18px; border-radius:10px; box-shadow:var(--ui-shadow); }
+    #loadingIcon{ width:40px; height:40px; }
+    #loadingText{ margin-top:8px; color:#444; }
+
+    #log{ position:absolute; left:0; bottom:0; width:100%; height:10vh; overflow-y:auto; background:var(--ui-bg); padding:5px; font-size:10px; box-shadow:0 -1px 0 #ccc inset; z-index:10; }
+    #log .log-error{ color:#b42318; font-weight:700; }
+
+    #color-legend{ position:absolute; left:8px; bottom:11vh; background:var(--ui-bg); padding:8px 12px; border-radius:10px; box-shadow:var(--ui-shadow); z-index:10; font-size:11px; }
+    #color-legend .legend-item{ display:flex; align-items:center; gap:8px; margin-bottom:4px; }
+    #color-legend .legend-color{ width:16px; height:16px; border-radius:50%; border:1px solid #ccc; }
+
+    .poi-pin{ width:26px; height:26px; display:block; filter:drop-shadow(0 1px 3px rgba(0,0,0,.45)); cursor:pointer; }
+    .poi-popup{ background:transparent; pointer-events:auto; cursor:pointer; }
+    .poi-popup .bubble{ position:relative; padding:9px 16px; border-radius:16px; font-size:17px; line-height:1.25; color:var(--fg,#111); background:var(--bg,#fff); box-shadow:0 1px 4px rgba(0,0,0,.35); white-space:nowrap; display:flex; align-items:center; gap:10px; }
+    .poi-popup .bubble .name{ font-weight:800; }
+    .poi-popup .bubble .linklike{ text-decoration: underline; text-underline-offset: 3px; }
+    .poi-popup .bubble::after{ content:""; position:absolute; left:50%; transform:translateX(-50%); top:100%; border-left:7px solid transparent; border-right:7px solid transparent; border-top:9px solid var(--bg,#fff); filter:drop-shadow(0 1px 2px rgba(0,0,0,.25)); }
+    .maplibregl-popup{ max-width:none; }
+    .maplibregl-popup-tip{ display:none; }
+    .maplibregl-popup-content{ background:transparent; box-shadow:none; padding:0; }
+
+    .focus-dot{ width:18px; height:18px; border:3px solid #0ea5e9; border-radius:50%; background:rgba(14,165,233,.2); box-shadow:0 0 0 2px rgba(255,255,255,.9); }
+  </style>
+</head>
+<body>
+  <div id="map"></div>
+
+  <div id="searchWrap">
+    <input id="searchInput" type="search" placeholder="Hledat místo (např. Mostar, Sarajevo, Brno...)" />
+    <button id="searchBtn">Najít</button>
+    <button id="refreshApiBtn" disabled>Zkusit API znovu</button>
+  </div>
+
+  <div id="left-menu">
+    <div class="menu-icon active" id="toggleHistoric" title="Hrady a zámky">🏰</div>
+    <div class="menu-icon" id="toggleTowers" title="Rozhledny">🗼</div>
+    <div class="menu-icon" id="togglePeaks" title="Vrcholy">⛰️</div>
+    <div class="menu-icon" id="toggleNature" title="Rezervace">🌿</div>
+    <div class="menu-icon" id="toggleRestaurace" title="Jídlo">🍽️</div>
+    <div class="menu-icon" id="toggleChurches" title="Kostely">⛪</div>
+    <div class="menu-icon" id="toggleFuel" title="Benzínky">⛽️</div>
+  </div>
+
+  <div id="loading">
+    <svg id="loadingIcon" viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
+      <circle cx="50" cy="50" r="40" stroke="#4285F4" stroke-width="10" fill="none" stroke-dasharray="180 80" stroke-linecap="round">
+        <animateTransform attributeName="transform" type="rotate" from="0 50 50" to="360 50 50" dur="1.4s" repeatCount="indefinite"/>
+      </circle>
+    </svg>
+    <p id="loadingText">Načítám data...</p>
+  </div>
+
+  <div id="color-legend"></div>
+  <div id="info">Klikni do mapy nebo vyhledej místo.</div>
+  <div id="log"></div>
+
+<script>
+let map=null, mapReady=false;
+let queryCenter = null;
+let focusMarker = null;
+let isLoading=false, poiRequestId=0;
+let moveEndTimer=null, lastZoom=null, lastFetchedBBox=null, lastActiveCatsKey='';
+let apiManualRefreshEnabled=false;
+
+const poiByCat = { toggleHistoric: [], toggleTowers: [], togglePeaks: [], toggleNature: [], toggleRestaurace: [], toggleChurches: [], toggleFuel: [] };
+
+const logDiv=document.getElementById('log');
+const infoDiv=document.getElementById('info');
+const loadingEl=document.getElementById('loading');
+const menuIcons=document.querySelectorAll('.menu-icon');
+const legendEl=document.getElementById('color-legend');
+const searchInput=document.getElementById('searchInput');
+const searchBtn=document.getElementById('searchBtn');
+const refreshApiBtn=document.getElementById('refreshApiBtn');
+
+function log(m, level='info'){ const d=document.createElement('div'); d.textContent=`${new Date().toLocaleTimeString()} ${m}`; if(level==='error') d.classList.add('log-error'); logDiv.prepend(d); }
+function setLoading(s){
+  isLoading=s;
+  loadingEl.style.display=s?'flex':'none';
+  if(s) setApiRefreshState(false);
+}
+function setApiRefreshState(enabled){
+  apiManualRefreshEnabled = enabled;
+  refreshApiBtn.style.display = enabled ? 'inline-block' : 'none';
+  refreshApiBtn.disabled = !enabled || isLoading;
+}
+
+const deg2rad=d=>d*Math.PI/180;
+function getDistance(a,b,c,d){ const R=6371, dLat=deg2rad(c-a), dLon=deg2rad(d-b); const x=Math.sin(dLat/2)**2 + Math.cos(deg2rad(a))*Math.cos(deg2rad(c))*Math.sin(dLon/2)**2; return R*2*Math.atan2(Math.sqrt(x),Math.sqrt(1-x)); }
+function getPoiColor(distance,max){ const r=Math.min(distance/max,1); if(r<1/3) return `rgb(255, ${Math.round(255*(r*3))}, 0)`; if(r<2/3) return `rgb(${Math.round(255*(1-(r-1/3)*3))},255,0)`; return `rgb(180, ${Math.round(255*(1-(r-2/3)*3))}, ${Math.round(255*((r-2/3)*3))})`; }
+function textColorForBg(rgb){ const m=rgb.match(/rgb\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*\)/i); let r=0,g=0,b=0; if(m){r=+m[1];g=+m[2];b=+m[3];} const L=(0.2126*r+0.7152*g+0.0722*b)/255; return L<0.55?'#fff':'#111'; }
+
+function getViewportBBox(){ const b=map.getBounds(); return {s:b.getSouth(), w:b.getWest(), n:b.getNorth(), e:b.getEast()}; }
+function expandBBox(b, pad=0.35){ const latSpan=b.n-b.s, lonSpan=b.e-b.w; return { s:b.s-latSpan*pad, w:b.w-lonSpan*pad, n:b.n+latSpan*pad, e:b.e+lonSpan*pad }; }
+function containsBBox(outer, inner){ return inner.s>=outer.s && inner.w>=outer.w && inner.n<=outer.n && inner.e<=outer.e; }
+function bboxToStr(b){ return `${b.s},${b.w},${b.n},${b.e}`; }
+
+function activeCats(){ return Array.from(menuIcons).filter(i=>i.classList.contains('active')).map(i=>i.id); }
+function activeCatsKey(){ return activeCats().sort().join('|'); }
+function refPoint(){
+  if(queryCenter) return queryCenter;
+  const c = map.getCenter();
+  return {lat:c.lat, lon:c.lng};
+}
+
+function updateLegend(){
+  const rp = refPoint();
+  const b=map.getBounds();
+  const corners=[[b.getSouth(),b.getWest()],[b.getSouth(),b.getEast()],[b.getNorth(),b.getWest()],[b.getNorth(),b.getEast()]];
+  let maxR=1;
+  for(const [la,lo] of corners){ maxR=Math.max(maxR,getDistance(rp.lat,rp.lon,la,lo)); }
+  legendEl.innerHTML='';
+  for(let i=1;i<=5;i++){
+    const d=(maxR/5)*i, c=getPoiColor(d,maxR);
+    const e=document.createElement('div'); e.className='legend-item';
+    e.innerHTML='<span class="legend-color" style="background:'+c+'"></span> '+d.toFixed(1)+' km';
+    legendEl.appendChild(e);
+  }
+}
+
+function ensureFocusMarker(){
+  if(focusMarker) return focusMarker;
+  const el=document.createElement('div');
+  el.className='focus-dot';
+  focusMarker = new maplibregl.Marker({element:el, anchor:'center'});
+  return focusMarker;
+}
+
+function setQueryCenter(lat, lon, reason='manual'){
+  queryCenter = {lat, lon};
+  ensureFocusMarker().setLngLat([lon, lat]).addTo(map);
+  map.easeTo({ center:[lon,lat], duration:300 });
+  infoDiv.textContent = `Fokus: ${lat.toFixed(5)}, ${lon.toFixed(5)} | Zdroj: ${reason}`;
+  updateLegend();
+  scheduleViewportFetch(true, reason);
+}
+
+function clearCategory(cat){ (poiByCat[cat]||[]).forEach(o=>{ try{o.marker.remove();}catch(e){} try{o.popup.remove();}catch(e){} }); poiByCat[cat]=[]; }
+function renderPOIsCategory(pois, cat){
+  clearCategory(cat);
+  const rp = refPoint();
+  updateLegend();
+  const b=map.getBounds();
+  const corners=[[b.getSouth(),b.getWest()],[b.getSouth(),b.getEast()],[b.getNorth(),b.getWest()],[b.getNorth(),b.getEast()]];
+  let maxR=1;
+  for(const [la,lo] of corners){ maxR=Math.max(maxR,getDistance(rp.lat,rp.lon,la,lo)); }
+  pois.sort((a,b)=> (b.distanceKm||0) - (a.distanceKm||0));
+  pois.forEach(p=>{
+    if(!Number.isFinite(p.lat)||!Number.isFinite(p.lon)) return;
+    const dist=getDistance(rp.lat,rp.lon,p.lat,p.lon); p.distanceKm=dist;
+    const bg=getPoiColor(dist,maxR), fg=textColorForBg(bg);
+    const label=(cat==='togglePeaks' && p.ele)? `${p.name} (${p.ele} m)` : p.name;
+    const el=document.createElement('div');
+    el.innerHTML='<svg class="poi-pin" viewBox="0 0 24 24" aria-hidden="true"><path fill="'+bg+'" d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7z"></path><circle cx="12" cy="9" r="2.6" fill="rgba(255,255,255,0.92)"></circle></svg>';
+    const marker=new maplibregl.Marker({element:el, anchor:'bottom'}).setLngLat([p.lon,p.lat]).addTo(map);
+
+    const wrap=document.createElement('div'); wrap.className='poi-popup';
+    const bubble=document.createElement('div'); bubble.className='bubble';
+    const hasLink = !!(p.wiki || p.website);
+    const nameSpan=document.createElement('span'); nameSpan.className='name'+(hasLink?' linklike':''); nameSpan.textContent=label;
+    bubble.appendChild(nameSpan);
+    bubble.style.setProperty('--bg',bg); bubble.style.setProperty('--fg',fg);
+    wrap.appendChild(bubble);
+    const popup=new maplibregl.Popup({closeButton:false, closeOnClick:false, anchor:'bottom', offset:28}).setDOMContent(wrap).setLngLat([p.lon,p.lat]).addTo(map);
+    poiByCat[cat].push({marker,popup});
+  });
+}
+
+async function fetchWithRetry(url,opt,id,retries=2,delay=900){
+  let attempt = 0;
+  const maxA = retries+1;
+  const t0 = performance.now();
+  while(true){
+    attempt++;
+    try{
+      if(id!==poiRequestId) throw new Error('CANCELLED');
+      const r = await fetch(url,opt);
+      if(!r.ok) throw new Error('HTTP '+r.status);
+      if(id!==poiRequestId) throw new Error('CANCELLED');
+      const data = await r.json();
+      log(`OK req=${id} in ${(performance.now()-t0).toFixed(0)}ms elems=${(data.elements||[]).length}`);
+      return data;
+    }catch(e){
+      if(e.message==='CANCELLED'){ log(`CANCEL req=${id}`); throw e; }
+      if(attempt>=maxA){ log(`ERROR req=${id} ${e.message}`,'error'); throw e; }
+      log(`RETRY req=${id} in ${delay}ms (${attempt}/${maxA})`,'error');
+      await new Promise(res=>setTimeout(res,delay));
+    }
+  }
+}
+
+const queryParts = {
+  toggleHistoric: `nwr[historic~"^(castle|ruins|chateau|fortress)$"]({{bbox}})(if:t["name"]);`,
+  toggleTowers: `nwr["man_made"="tower"]["tower:type"="observation"]({{bbox}})(if:t["name"]);`,
+  togglePeaks: `nwr["natural"="peak"]({{bbox}})(if:t["ele"] > 400)(if:t["name"]);`,
+  toggleNature: `nwr["leisure"="nature_reserve"]({{bbox}})(if:t["name"]);`,
+  toggleRestaurace: `nwr["amenity"~"cafe|pub|bar|restaurant|food|biergarten"]({{bbox}})(if:t["name"]);`,
+  toggleChurches: `nwr[building~"church|cathedral|basilica"]({{bbox}})(if:t["name"]);`,
+  toggleFuel: `nwr["amenity"="fuel"]({{bbox}})(if:t["name"]);`
+};
+
+function classifyCategory(tags){
+  const t=tags||{};
+  if(t.historic && /^(castle|ruins|chateau|fortress)$/i.test(t.historic)) return 'toggleHistoric';
+  if(t['man_made']==='tower' && t['tower:type']==='observation') return 'toggleTowers';
+  if(t.natural==='peak' && (!t.ele || +t.ele>400)) return 'togglePeaks';
+  if(t.leisure==='nature_reserve') return 'toggleNature';
+  if(t.building && /(church|cathedral|basilica)/i.test(t.building)) return 'toggleChurches';
+  if(t.amenity==='fuel') return 'toggleFuel';
+  if(t.amenity && /(cafe|pub|bar|restaurant|food|biergarten)/i.test(t.amenity)) return 'toggleRestaurace';
+  return null;
+}
+
+function scheduleViewportFetch(force=false, reason='manual'){
+  if(!mapReady) return;
+  const inner = getViewportBBox();
+  const zoom = map.getZoom();
+  const catsKey = activeCatsKey();
+  const catsChanged = (catsKey !== lastActiveCatsKey);
+  const outsideLoaded = !lastFetchedBBox || !containsBBox(lastFetchedBBox, inner);
+  const zoomOut = (lastZoom!=null && zoom < lastZoom - 1e-6);
+  const should = force || catsChanged || (outsideLoaded && (zoomOut || lastZoom==null || !containsBBox(lastFetchedBBox, inner)));
+
+  if(!should){ lastZoom = zoom; lastActiveCatsKey = catsKey; return; }
+
+  const expanded = expandBBox(inner, 0.35);
+  log(`FETCH req=${poiRequestId+1} cats=[${catsKey}] z=${zoom.toFixed(2)} reason=${reason}`);
+  getPOIsViewport(expanded);
+  lastFetchedBBox = expanded;
+  lastZoom = zoom;
+  lastActiveCatsKey = catsKey;
+}
+
+function getPOIsViewport(expandedBBox){
+  if(!mapReady) return;
+  poiRequestId++;
+  const id=poiRequestId;
+  setLoading(true);
+  const cats=activeCats();
+  if(!cats.length){ Object.keys(poiByCat).forEach(clearCategory); setLoading(false); log('NO CATS'); return; }
+  const bboxStr = bboxToStr(expandedBBox);
+  const body = cats.map(cid => queryParts[cid].replace(/\{\{bbox\}\}/g, bboxStr)).join('');
+  const query = `[out:json][timeout:20];(${body});out center;`;
+
+  fetchWithRetry('https://overpass-api.de/api/interpreter', {method:'POST', body:query}, id)
+    .then(data=>{
+      if(id!==poiRequestId) return;
+      setApiRefreshState(false);
+      const rp = refPoint();
+      const grouped={};
+      cats.forEach(c=>grouped[c]=[]);
+      (data.elements||[]).forEach(e=>{
+        const la=e.lat ?? e.center?.lat;
+        const lo=e.lon ?? e.center?.lon;
+        if(!Number.isFinite(la)||!Number.isFinite(lo)) return;
+        const cat = classifyCategory(e.tags)||'__other';
+        if(!grouped[cat]) grouped[cat]=[];
+        const website = e.tags?.website || e.tags?.url || e.tags?.['contact:website'] || null;
+        grouped[cat].push({ name:e.tags?.name || 'Neznámý', ele:e.tags?.ele || null, lat:la, lon:lo, distanceKm:getDistance(rp.lat,rp.lon,la,lo), wiki:e.tags?.wikipedia || '', website });
+      });
+      cats.forEach(c=> renderPOIsCategory(grouped[c]||[], c));
+      log(`RENDER cats=[${cats.join('|')}]`);
+    })
+    .catch(err=>{
+      if(err.message!=='CANCELLED'){
+        log('ERR '+err,'error');
+        setApiRefreshState(true);
+      }
+    })
+    .finally(()=>setLoading(false));
+}
+
+async function geocodePlace(query){
+  const url = `https://nominatim.openstreetmap.org/search?format=jsonv2&limit=1&q=${encodeURIComponent(query)}`;
+  const r = await fetch(url, {headers:{'Accept':'application/json'}});
+  if(!r.ok) throw new Error('Geocoder HTTP '+r.status);
+  const arr = await r.json();
+  if(!arr.length) throw new Error('Místo nenalezeno');
+  return arr[0];
+}
+
+function initMap(){
+  map = new maplibregl.Map({container:'map', style:'https://tiles.openfreemap.org/styles/liberty', center:[14.4378,50.0755], zoom:11, pitch:30, bearing:0, antialias:true});
+  map.addControl(new maplibregl.NavigationControl(),'top-right');
+  map.on('load', ()=>{
+    mapReady=true;
+    infoDiv.textContent = 'Klikni do mapy nebo vyhledej místo. Poté se POI plynule donačítají při posunu mapy.';
+    map.on('click', e => setQueryCenter(e.lngLat.lat, e.lngLat.lng, 'click'));
+    map.on('moveend', ()=>{
+      if(moveEndTimer) clearTimeout(moveEndTimer);
+      moveEndTimer = setTimeout(()=> scheduleViewportFetch(false, 'moveend'), 220);
+      updateLegend();
+    });
+    updateLegend();
+    scheduleViewportFetch(true, 'init');
+  });
+}
+
+menuIcons.forEach(ic=> ic.addEventListener('click', ()=>{
+  ic.classList.toggle('active');
+  if(!ic.classList.contains('active')) clearCategory(ic.id);
+  scheduleViewportFetch(true,'category-toggle');
+}));
+
+searchBtn.addEventListener('click', async ()=>{
+  const q=searchInput.value.trim();
+  if(!q) return;
+  try{
+    setLoading(true);
+    const hit = await geocodePlace(q);
+    const lat=Number(hit.lat), lon=Number(hit.lon);
+    if(!Number.isFinite(lat)||!Number.isFinite(lon)) throw new Error('Neplatná geokódovací odpověď');
+    log(`SEARCH "${q}" -> ${lat.toFixed(5)},${lon.toFixed(5)}`);
+    setQueryCenter(lat, lon, 'search');
+  }catch(e){
+    log(`SEARCH ERROR: ${e.message || e}`,'error');
+    infoDiv.textContent = `Vyhledávání selhalo: ${e.message || e}`;
+  }finally{ setLoading(false); }
+});
+searchInput.addEventListener('keydown', e=>{ if(e.key==='Enter') searchBtn.click(); });
+refreshApiBtn.addEventListener('click', ()=>{
+  if(!apiManualRefreshEnabled || isLoading) return;
+  setApiRefreshState(false);
+  scheduleViewportFetch(true,'manual-refresh');
+});
+
+initMap();
+</script>
+</body>
+</html>
