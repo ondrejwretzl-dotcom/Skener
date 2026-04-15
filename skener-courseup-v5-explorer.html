@@ -18,6 +18,8 @@
     #searchWrap{ position:absolute; top:8px; left:50%; transform:translateX(-50%); width:min(95vw, 680px); z-index:30; display:flex; gap:6px; background:var(--ui-bg); border-radius:12px; padding:8px; box-shadow:var(--ui-shadow); }
     #searchInput{ flex:1; border:1px solid #d1d5db; border-radius:10px; padding:10px 12px; font-size:14px; }
     #searchBtn{ border:0; border-radius:10px; background:#2563eb; color:#fff; padding:10px 14px; font-weight:700; cursor:pointer; }
+    #refreshApiBtn{ border:0; border-radius:10px; background:#b42318; color:#fff; padding:10px 12px; font-weight:700; cursor:pointer; display:none; }
+    #refreshApiBtn:disabled{ opacity:.45; cursor:not-allowed; }
 
     #left-menu{ position:absolute; top:64px; left:8px; display:flex; flex-direction:column; gap:8px; z-index:10; }
     .menu-icon{ width:38px; height:38px; background:var(--ui-bg); border-radius:50%; display:flex; align-items:center; justify-content:center; box-shadow:var(--ui-shadow); cursor:pointer; font-size:18px; }
@@ -55,6 +57,7 @@
   <div id="searchWrap">
     <input id="searchInput" type="search" placeholder="Hledat místo (např. Mostar, Sarajevo, Brno...)" />
     <button id="searchBtn">Najít</button>
+    <button id="refreshApiBtn" disabled>Zkusit API znovu</button>
   </div>
 
   <div id="left-menu">
@@ -86,6 +89,7 @@ let queryCenter = null;
 let focusMarker = null;
 let isLoading=false, poiRequestId=0;
 let moveEndTimer=null, lastZoom=null, lastFetchedBBox=null, lastActiveCatsKey='';
+let apiManualRefreshEnabled=false;
 
 const poiByCat = { toggleHistoric: [], toggleTowers: [], togglePeaks: [], toggleNature: [], toggleRestaurace: [], toggleChurches: [], toggleFuel: [] };
 
@@ -96,9 +100,19 @@ const menuIcons=document.querySelectorAll('.menu-icon');
 const legendEl=document.getElementById('color-legend');
 const searchInput=document.getElementById('searchInput');
 const searchBtn=document.getElementById('searchBtn');
+const refreshApiBtn=document.getElementById('refreshApiBtn');
 
 function log(m, level='info'){ const d=document.createElement('div'); d.textContent=`${new Date().toLocaleTimeString()} ${m}`; if(level==='error') d.classList.add('log-error'); logDiv.prepend(d); }
-function setLoading(s){ isLoading=s; loadingEl.style.display=s?'flex':'none'; }
+function setLoading(s){
+  isLoading=s;
+  loadingEl.style.display=s?'flex':'none';
+  if(s) setApiRefreshState(false);
+}
+function setApiRefreshState(enabled){
+  apiManualRefreshEnabled = enabled;
+  refreshApiBtn.style.display = enabled ? 'inline-block' : 'none';
+  refreshApiBtn.disabled = !enabled || isLoading;
+}
 
 const deg2rad=d=>d*Math.PI/180;
 function getDistance(a,b,c,d){ const R=6371, dLat=deg2rad(c-a), dLon=deg2rad(d-b); const x=Math.sin(dLat/2)**2 + Math.cos(deg2rad(a))*Math.cos(deg2rad(c))*Math.sin(dLon/2)**2; return R*2*Math.atan2(Math.sqrt(x),Math.sqrt(1-x)); }
@@ -260,6 +274,7 @@ function getPOIsViewport(expandedBBox){
   fetchWithRetry('https://overpass-api.de/api/interpreter', {method:'POST', body:query}, id)
     .then(data=>{
       if(id!==poiRequestId) return;
+      setApiRefreshState(false);
       const rp = refPoint();
       const grouped={};
       cats.forEach(c=>grouped[c]=[]);
@@ -275,7 +290,12 @@ function getPOIsViewport(expandedBBox){
       cats.forEach(c=> renderPOIsCategory(grouped[c]||[], c));
       log(`RENDER cats=[${cats.join('|')}]`);
     })
-    .catch(err=>{ if(err.message!=='CANCELLED') log('ERR '+err,'error'); })
+    .catch(err=>{
+      if(err.message!=='CANCELLED'){
+        log('ERR '+err,'error');
+        setApiRefreshState(true);
+      }
+    })
     .finally(()=>setLoading(false));
 }
 
@@ -327,6 +347,11 @@ searchBtn.addEventListener('click', async ()=>{
   }finally{ setLoading(false); }
 });
 searchInput.addEventListener('keydown', e=>{ if(e.key==='Enter') searchBtn.click(); });
+refreshApiBtn.addEventListener('click', ()=>{
+  if(!apiManualRefreshEnabled || isLoading) return;
+  setApiRefreshState(false);
+  scheduleViewportFetch(true,'manual-refresh');
+});
 
 initMap();
 </script>
